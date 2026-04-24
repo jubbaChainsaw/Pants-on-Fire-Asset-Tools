@@ -18,6 +18,11 @@ interface ApiErrorPayload {
   };
 }
 
+interface ParsedApiError {
+  message: string;
+  raw: string;
+}
+
 export interface ImageGenerationRequestOptions {
   timeoutMs?: number;
   maxRetries?: number;
@@ -90,6 +95,43 @@ function formatApiError(status: number, rawMessage: string): string {
   }
 }
 
+function parseApiError(rawMessage: string): ParsedApiError {
+  try {
+    const parsed = JSON.parse(rawMessage) as ApiErrorPayload;
+    return {
+      message: parsed.error?.message?.trim() || rawMessage,
+      raw: rawMessage
+    };
+  } catch {
+    return {
+      message: rawMessage,
+      raw: rawMessage
+    };
+  }
+}
+
+function parseSupportedSizesFromMessage(message: string): string[] {
+  const normalized = message.toLowerCase();
+  const marker = 'supported sizes are';
+  const markerIndex = normalized.indexOf(marker);
+  if (markerIndex < 0) return [];
+
+  const tail = message.slice(markerIndex + marker.length);
+  const cleaned = tail.replace(/[.]/g, ' ').trim();
+  return cleaned
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function chooseBestFallbackSize(supportedSizes: string[]): string | null {
+  const rankedPreferred = ['1024x1536', '1024x1024', '1536x1024', 'auto'];
+  for (const preferred of rankedPreferred) {
+    if (supportedSizes.includes(preferred)) return preferred;
+  }
+  return supportedSizes[0] || null;
+}
+
 export async function generateArtworkImage(
   prompt: GeneratedPrompt,
   config: ImageGeneratorConfig,
@@ -105,24 +147,21 @@ export async function generateArtworkImage(
     ...requestOptions
   };
 
-  const baseBody = {
-    model: config.model,
-    prompt: prompt.content,
-    size: promptState.resolution,
-    quality: config.quality,
-    n: 1
-  };
+  let chosenSize = promptState.resolution;
+  let includeQuality = true;
+  let includeResponseFormat = true;
 
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
     try {
-      const requestBody =
-        attempt > 0
-          ? baseBody
-          : {
-              ...baseBody,
-              response_format: 'b64_json'
-            };
+      const requestBody: Record<string, unknown> = {
+        model: config.model,
+        prompt: prompt.content,
+        size: chosenSize,
+        n: 1
+      };
+      if (includeQuality) requestBody.quality = config.quality;
+      if (includeResponseFormat) requestBody.response_format = 'b64_json';
 
       const response = await fetchWithTimeout(
         config.endpoint,
@@ -139,9 +178,31 @@ export async function generateArtworkImage(
 
       if (!response.ok) {
         const message = await response.text();
-        if (attempt === 0 && shouldRetryWithoutResponseFormat(message)) {
+        const parsedError = parseApiError(message);
+        if (shouldRetryWithoutResponseFormat(parsedError.message)) {
           // Some OpenAI-compatible providers reject response_format.
+          includeResponseFormat = false;
           continue;
+        }
+        if (parsedError.message.toLowerCase().includes('unknown parameter: quality')) {
+          includeQuality = false;
+          continue;
+        }
+        if (parsedError.message.toLowerCase().includes('invalid size')) {
+          const supportedSizes = parseSupportedSizesFromMessage(parsedError.message);
+          const fallbackSize = chooseBestFallbackSize(supportedSizes);
+          if (fallbackSize && fallbackSize !== chosenSize) {
+            chosenSize = fallbackSize;
+            continue;
+          }
+        }
+        if (parsedError.message.toLowerCase().includes('supported sizes are')) {
+          const supportedSizes = parseSupportedSizesFromMessage(parsedError.message);
+          const fallbackSize = chooseBestFallbackSize(supportedSizes);
+          if (fallbackSize && fallbackSize !== chosenSize) {
+            chosenSize = fallbackSize;
+            continue;
+          }
         }
         const retryable = shouldRetryStatus(response.status);
         if (retryable && attempt < options.maxRetries) {
@@ -149,7 +210,7 @@ export async function generateArtworkImage(
           await sleep(backoff);
           continue;
         }
-        throw new Error(formatApiError(response.status, message));
+        throw new Error(formatApiError(response.status, parsedError.raw));
       }
 
       const parsed = (await response.json()) as OpenAiImageResponse;
