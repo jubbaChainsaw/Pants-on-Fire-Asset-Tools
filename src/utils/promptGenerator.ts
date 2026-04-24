@@ -64,11 +64,13 @@ function getBackCardInstructions(theme: Theme): string {
 
 function getFrontCardInstructions(theme: Theme): string {
   return [
-    'Create front card design for text overlay.',
-    'Large empty center text safe zone required.',
-    'Use matching border style from back card.',
-    'Place small logo top RIGHT.',
-    'Place small logo bottom LEFT.',
+    'Create front card design for prompt text overlay.',
+    'Reserve a VERY LARGE centered text-safe panel (rounded rectangle) that uses roughly 75-80% card width and 56-64% card height.',
+    'The safe panel must stay clean and visually quiet for long multi-line prompts.',
+    'Do NOT place characters, icons, logos, heavy textures, or high-contrast patterns inside the text-safe panel.',
+    'Push all decorative artwork to the outer frame, corners, and border only.',
+    'Use matching border style from back card while keeping the center area open.',
+    'If a logo is included, keep it tiny and on the border edge so it never reduces text room.',
     `Visual motifs should still reference: ${theme.motifs.join(', ')}.`
   ].join(' ');
 }
@@ -94,6 +96,12 @@ function buildPromptBody(
     'Text readability requirement: leave room for white text with black outline and red text with white outline.',
     `Hard rules: ${HARD_RULES.join('; ')}.`
   ];
+
+  if (side === 'front') {
+    segments.push(
+      'Front-card hard layout rule: center prompt-safe panel must dominate the composition and remain unobstructed for readable text.'
+    );
+  }
 
   if (state.strictMode) {
     segments.push('Strict Mode enabled: enforce every hard rule with zero exceptions.');
