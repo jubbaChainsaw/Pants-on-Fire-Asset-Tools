@@ -2,103 +2,89 @@ import { RoundType } from '../types';
 
 export const DEFAULT_ROUND_TYPES: RoundType[] = [
   {
-    id: 'bluff-round',
-    name: 'Bluff Round',
-    description: 'Players present confident lies as believable truths.',
-    promptStyle: 'Give a bold claim that sounds true at first glance.',
+    id: 'prompt',
+    name: 'Hot Seat',
+    cardType: 'prompt',
+    onlineOnly: false,
+    description:
+      'Classic liar round. Most players get the main prompt; liar(s) get a similar-but-different prompt and try to blend in with clues.',
+    promptStyle: 'Classic liar-style clue prompt with believable overlap.',
     examples: [
-      'Convince everyone you once met a pirate dentist in Croydon.',
-      'Claim you can identify any biscuit brand by smell alone.'
+      'Truthful players receive: "Name a place you avoid at night."',
+      'Liar receives: "Name a place you love at night."'
     ],
-    rules: ['Speak confidently', 'Keep statement short', 'No impossible magic claims']
+    rules: [
+      'Most players receive the main prompt',
+      'Liar(s) receive a similar-but-different prompt',
+      'Answer in ways that can plausibly overlap'
+    ]
   },
   {
-    id: 'truth-round',
-    name: 'Truth Round',
-    description: 'Players share a likely true statement while bluffers dodge details.',
-    promptStyle: 'State a plausible truth with one memorable detail.',
+    id: 'opinion',
+    name: 'Truth or Twisted',
+    cardType: 'opinion',
+    onlineOnly: false,
+    description:
+      'Everyone gets the same scenario, but liar(s) must argue against what they naturally think to appear convincing.',
+    promptStyle: 'Opinion scenario where liar(s) defend a stance opposite their natural take.',
     examples: [
-      'Describe a real life mishap involving shoes.',
-      'Share a genuine skill nobody expects from you.'
+      'Scenario: "Best holiday is silence-only retreat."',
+      'Liar task: argue opposite of your real opinion without revealing discomfort.'
     ],
-    rules: ['Use believable detail', 'No over-explaining', 'Stay concise']
+    rules: ['All players see the same scenario', 'Liar(s) must argue against natural instinct', 'Stay convincing under pushback']
   },
   {
-    id: 'quickfire-round',
-    name: 'Quickfire Round',
-    description: 'Fast one-liners under pressure.',
-    promptStyle: 'Produce rapid punchline-style responses.',
+    id: 'picture',
+    name: 'Flash Frame',
+    cardType: 'picture',
+    onlineOnly: false,
+    description: 'Visual clue round using image-based prompts; players bluff based on what they saw.',
+    promptStyle: 'Image clue interpretation and bluffing prompt.',
     examples: [
-      'Name the worst superhero side-hustle in under five words.',
-      'Pitch a cursed breakfast in one sentence.'
+      'Image clue: blurry carnival photo with hidden mascot.',
+      'Liar describes plausible details despite seeing alternate/limited clue.'
     ],
-    rules: ['Keep it snappy', 'One line only', 'Avoid rambling']
+    rules: ['Use image-based clue interpretation', 'Keep responses short and specific', 'Bluff without over-claiming impossible details']
   },
   {
-    id: 'story-round',
-    name: 'Story Round',
-    description: 'Short narrative setup with twist potential.',
-    promptStyle: 'Tell a mini story with setup and a twist ending.',
+    id: 'grill',
+    name: "Grill 'Em",
+    cardType: 'grill',
+    onlineOnly: false,
+    description:
+      "AI interrogation round. Players ask questions (mic/text), AI gives short answers, and liar(s) already know the hidden topic and try to steer suspicion.",
+    promptStyle: 'Interrogation-focused round with short AI-style answer constraints.',
     examples: [
-      'Tell a 2-line tale about a haunted vending machine.',
-      'Narrate a failed disguise mission at a wedding.'
+      'Prompt everyone to ask one tight probing question each.',
+      'Liar steers attention using prior hidden-topic knowledge.'
     ],
-    rules: ['Max two lines', 'Must include twist', 'Stay in theme']
+    rules: ['Questions should be concise', 'Answers are short and direct', 'Liar(s) exploit hidden-topic context']
   },
   {
-    id: 'accusation-round',
-    name: 'Accusation Round',
-    description: 'Players call out suspicious behavior with flair.',
-    promptStyle: 'Make a dramatic accusation grounded in observations.',
+    id: 'sound',
+    name: 'Dodgy Audio',
+    cardType: 'sound',
+    onlineOnly: true,
+    description: 'Audio-based bluffing round where players infer and misdirect from sound clues.',
+    promptStyle: 'Sound clue inference and misdirection prompt.',
     examples: [
-      'Accuse someone of being the snack thief with one odd clue.',
-      'Point at the likely liar using theatrical language.'
+      'Audio clue: short clip with layered ambient sounds.',
+      'Liar explains what they "heard" and nudges suspicion elsewhere.'
     ],
-    rules: ['No direct personal attacks', 'Focus on game clues', 'Be dramatic not cruel']
+    rules: ['Online-only clue delivery', 'Infer from short audio snippets', 'Use misdirection without impossible claims']
   },
   {
-    id: 'confession-round',
-    name: 'Confession Round',
-    description: 'Fake or real confessions that sound suspiciously honest.',
-    promptStyle: 'Deliver a confession that feels believable yet chaotic.',
+    id: 'video',
+    name: 'Clip Trap',
+    cardType: 'video',
+    onlineOnly: true,
+    description: 'Short video clue round designed for fast suspicion and bluffing from brief clips.',
+    promptStyle: 'Brief video clue analysis with high-tempo suspicion dynamics.',
     examples: [
-      'Confess to a ridiculous social mistake at a party.',
-      'Admit to a harmless habit nobody would expect.'
+      'Video clue: 2-second action cut with one critical detail.',
+      'Liar reconstructs the moment while nudging attention away from gaps.'
     ],
-    rules: ['No illegal instruction', 'Keep it playful', 'Avoid harmful admissions']
-  },
-  {
-    id: 'challenge-round',
-    name: 'Challenge Round',
-    description: 'Players set tiny dares or challenge statements.',
-    promptStyle: 'Issue a harmless challenge with comic stakes.',
-    examples: [
-      'Challenge someone to explain pineapple pizza like a lawyer.',
-      'Dare the table to name a villainous pet hamster.'
-    ],
-    rules: ['Harmless only', 'No physical risk', 'Keep challenge verbal']
-  },
-  {
-    id: 'chaos-round',
-    name: 'Chaos Round',
-    description: 'High-energy absurdity while remaining playable.',
-    promptStyle: 'Generate bizarre but readable chaos prompts.',
-    examples: [
-      'Pitch a disco-themed emergency plan in one line.',
-      'Describe a cursed office ritual everyone follows.'
-    ],
-    rules: ['Readable sentence', 'No hate speech', 'Keep it party-safe']
-  },
-  {
-    id: 'wildcard-round',
-    name: 'Wildcard Round',
-    description: 'Flexible hybrid structure using one selected style.',
-    promptStyle: 'Blend bluff, confession, and quickfire tones in a single punchy line.',
-    examples: [
-      'Confidently confess to inventing a fake holiday and dare others to celebrate it.',
-      'Drop one absurd claim and one defensive comeback in the same sentence.'
-    ],
-    rules: ['One concise line', 'Stay game-safe', 'Keep structure clear']
+    rules: ['Online-only clue delivery', 'Clips are intentionally brief', 'Fast accusation and bluff cadence']
   }
 ];
 
