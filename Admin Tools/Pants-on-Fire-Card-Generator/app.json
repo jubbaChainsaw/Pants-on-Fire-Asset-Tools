@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Pants on Fire! Asset Tools",
+    "slug": "pants-on-fire-asset-tools",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "pantsonfireassettools",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#120038"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#120038"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

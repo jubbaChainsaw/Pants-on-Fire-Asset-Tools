@@ -1,0 +1,17 @@
+export const THEME_META = {
+  Default: { gradient: 'from-fuchsia-500 via-cyan-500 to-yellow-300', accent: 'text-cyan-200', musicPack: 'default_arcade', sfxPack: 'default_arcade', tone: 'chaotic-neon', hostStyle: 'gameshow' },
+  Pirates: { gradient: 'from-amber-500 via-orange-500 to-red-500', accent: 'text-amber-200', musicPack: 'pirate_shanty', sfxPack: 'pirate_wood', tone: 'swashbuckling-chaos', hostStyle: 'captain' },
+  Victorian: { gradient: 'from-stone-400 via-amber-300 to-rose-400', accent: 'text-amber-100', musicPack: 'victorian_parlour', sfxPack: 'victorian_clock', tone: 'dramatic-polished', hostStyle: 'master-of-ceremonies' },
+  Spies: { gradient: 'from-zinc-700 via-slate-700 to-emerald-500', accent: 'text-emerald-200', musicPack: 'spy_funk', sfxPack: 'spy_click', tone: 'slick-suspicious', hostStyle: 'handler' },
+  Cowboys: { gradient: 'from-yellow-700 via-orange-600 to-red-700', accent: 'text-orange-200', musicPack: 'western', sfxPack: 'spurs', tone: 'dusty-rowdy', hostStyle: 'sheriff' },
+  Gangsters: { gradient: 'from-red-900 via-zinc-800 to-yellow-700', accent: 'text-red-200', musicPack: 'gangster_jazz', sfxPack: 'finger_snap', tone: 'streetwise-dramatic', hostStyle: 'boss' },
+  Monsters: { gradient: 'from-lime-700 via-emerald-800 to-slate-900', accent: 'text-lime-200', musicPack: 'monster_creep', sfxPack: 'monster_growl', tone: 'spooky-campy', hostStyle: 'crypt-host' },
+  'Rock Stars': { gradient: 'from-pink-600 via-violet-600 to-sky-500', accent: 'text-pink-200', musicPack: 'rock_arena', sfxPack: 'guitar_hit', tone: 'loud-hype', hostStyle: 'front-person' },
+  'Flying Squad': { gradient: 'from-sky-400 via-blue-600 to-slate-700', accent: 'text-sky-200', musicPack: 'raf_march', sfxPack: 'radio_click', tone: 'mission-control', hostStyle: 'commander' },
+  'Drag Queens': { gradient: 'from-pink-500 via-fuchsia-500 to-yellow-300', accent: 'text-pink-200', musicPack: 'drag_disco', sfxPack: 'sparkle_pop', tone: 'fabulous-chaos', hostStyle: 'showstopper' },
+  Superheroes: { gradient: 'from-blue-600 via-red-500 to-yellow-300', accent: 'text-yellow-200', musicPack: 'heroic_synth', sfxPack: 'hero_whoosh', tone: 'epic-upbeat', hostStyle: 'hero-announcer' },
+  Aliens: { gradient: 'from-lime-400 via-cyan-500 to-violet-700', accent: 'text-lime-100', musicPack: 'alien_synth', sfxPack: 'alien_bloop', tone: 'weird-cosmic', hostStyle: 'mothership-ai' },
+  Medical: { gradient: 'from-cyan-300 via-white to-red-400', accent: 'text-cyan-100', musicPack: 'medical_tension', sfxPack: 'medical_beep', tone: 'clinical-panic', hostStyle: 'triage-host' },
+  Royalty: { gradient: 'from-yellow-400 via-amber-500 to-purple-700', accent: 'text-yellow-100', musicPack: 'royal_fanfare', sfxPack: 'royal_chime', tone: 'grand-theatrical', hostStyle: 'herald' },
+  Wrestlers: { gradient: 'from-red-500 via-orange-500 to-zinc-800', accent: 'text-orange-100', musicPack: 'wrestling_entrance', sfxPack: 'wrestling_bell', tone: 'arena-intense', hostStyle: 'ring-announcer' },
+};

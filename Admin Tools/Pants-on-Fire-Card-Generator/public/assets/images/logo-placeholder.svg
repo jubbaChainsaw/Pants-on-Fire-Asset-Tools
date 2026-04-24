@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" fill="none">
+  <rect width="1200" height="600" rx="48" fill="#09112B"/>
+  <rect x="25" y="25" width="1150" height="550" rx="36" fill="url(#g1)" fill-opacity="0.2" stroke="#fff" stroke-opacity="0.15"/>
+  <circle cx="250" cy="180" r="90" fill="#0FF" fill-opacity="0.15"/>
+  <circle cx="980" cy="420" r="110" fill="#FF00A8" fill-opacity="0.15"/>
+  <text x="600" y="200" text-anchor="middle" fill="#FFE44D" font-size="64" font-family="Arial" font-weight="900">PANTS ON FIRE</text>
+  <text x="600" y="280" text-anchor="middle" fill="#FFFFFF" font-size="42" font-family="Arial" font-weight="800">FIND THE LIAR</text>
+  <text x="600" y="360" text-anchor="middle" fill="#8DEBFF" font-size="26" font-family="Arial">PLACEHOLDER LOGO — REPLACE WITH FINAL BRAND ART</text>
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1200" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF00A8"/>
+      <stop offset="0.5" stop-color="#00D7FF"/>
+      <stop offset="1" stop-color="#FFD43B"/>
+    </linearGradient>
+  </defs>
+</svg>
