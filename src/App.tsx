@@ -28,6 +28,31 @@ import {
   promptsToText
 } from './utils/exporters';
 
+function normalizeRoundTypes(rawRoundTypes: RoundType[]): RoundType[] {
+  const byId = new Map(rawRoundTypes.map((roundType) => [roundType.id, roundType]));
+
+  return DEFAULT_ROUND_TYPES.map((fallback) => {
+    const source = byId.get(fallback.id);
+    if (!source) return fallback;
+
+    return {
+      ...fallback,
+      ...source,
+      id: fallback.id,
+      cardType: fallback.cardType,
+      onlineOnly: fallback.onlineOnly,
+      examples:
+        Array.isArray(source.examples) && source.examples.length > 0
+          ? source.examples.map((value) => value.trim()).filter(Boolean)
+          : fallback.examples,
+      rules:
+        Array.isArray(source.rules) && source.rules.length > 0
+          ? source.rules.map((value) => value.trim()).filter(Boolean)
+          : fallback.rules
+    };
+  });
+}
+
 const STORAGE_KEYS = {
   themes: 'pof_themes_v1',
   roundTypes: 'pof_round_types_v1',
@@ -118,7 +143,7 @@ function App(): JSX.Element {
   );
   const [themes, setThemes] = useState<Theme[]>(loadFromStorage(STORAGE_KEYS.themes, DEFAULT_THEMES));
   const [roundTypes, setRoundTypes] = useState<RoundType[]>(
-    loadFromStorage(STORAGE_KEYS.roundTypes, DEFAULT_ROUND_TYPES)
+    normalizeRoundTypes(loadFromStorage(STORAGE_KEYS.roundTypes, DEFAULT_ROUND_TYPES))
   );
   const [promptState, setPromptState] = useState<PromptGeneratorState>(
     loadFromStorage(STORAGE_KEYS.promptState, DEFAULT_PROMPT_STATE)
@@ -151,7 +176,7 @@ function App(): JSX.Element {
   );
 
   useEffect(() => saveToStorage(STORAGE_KEYS.themes, themes), [themes]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, roundTypes), [roundTypes]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, normalizeRoundTypes(roundTypes)), [roundTypes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.promptState, promptState), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.cardTextState, cardTextState), [cardTextState]);
@@ -332,7 +357,9 @@ function App(): JSX.Element {
   }
 
   function updateRoundType(index: number, value: Partial<RoundType>): void {
-    setRoundTypes((prev) => prev.map((roundType, idx) => (idx === index ? { ...roundType, ...value } : roundType)));
+    setRoundTypes((prev) =>
+      normalizeRoundTypes(prev.map((roundType, idx) => (idx === index ? { ...roundType, ...value } : roundType)))
+    );
   }
 
   function exportAllState(): void {
@@ -412,6 +439,9 @@ function App(): JSX.Element {
             <h2 className="text-xl md:text-2xl font-black text-lime-300">1. Prompt Generator</h2>
             <p className="text-white/90 mt-1">
               Generates strict game-ready card art prompts with hard one-card enforcement.
+            </p>
+            <p className="text-white/80 mt-2 text-sm">
+              This tool does not render art directly. Use the generated prompts in your external image model/tool of choice.
             </p>
 
             <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
@@ -653,6 +683,10 @@ function App(): JSX.Element {
             <div className="mt-4 neon-panel p-3 bg-black/40">
               <h3 className="font-black text-orange-300">Round Type Structure Lock</h3>
               <p className="text-white text-sm mt-1">{selectedRoundType?.description}</p>
+              <p className="text-white/90 text-sm mt-1">
+                <strong>Card Type:</strong> {selectedRoundType?.cardType}
+                {selectedRoundType?.onlineOnly ? ' (online-only)' : ' (offline/pass-the-phone ready)'}
+              </p>
               <p className="text-white/90 text-sm mt-1">
                 <strong>Prompt Style:</strong> {selectedRoundType?.promptStyle}
               </p>
@@ -1058,6 +1092,24 @@ function App(): JSX.Element {
                       <input
                         className="sticker px-3 py-2 bg-black text-lime-300"
                         value={roundType.id}
+                        disabled
+                        readOnly
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 font-bold">
+                      Card Type
+                      <input
+                        className="sticker px-3 py-2 bg-black text-lime-300"
+                        value={roundType.cardType}
+                        disabled
+                        readOnly
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 font-bold">
+                      Online-only
+                      <input
+                        className="sticker px-3 py-2 bg-black text-lime-300"
+                        value={roundType.onlineOnly ? 'Yes' : 'No'}
                         disabled
                         readOnly
                       />

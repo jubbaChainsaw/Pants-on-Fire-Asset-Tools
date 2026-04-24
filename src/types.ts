@@ -16,10 +16,12 @@ export interface Theme {
 export interface RoundType {
   id: string;
   name: string;
+  cardType: 'prompt' | 'opinion' | 'picture' | 'grill' | 'sound' | 'video';
   description: string;
   promptStyle: string;
   examples: string[];
   rules: string[];
+  onlineOnly: boolean;
 }
 
 export interface PromptGeneratorState {
