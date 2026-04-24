@@ -110,7 +110,10 @@ const DEFAULT_IMAGE_GENERATOR_CONFIG: ImageGeneratorConfig = {
   endpoint: 'https://api.openai.com/v1/images/generations',
   apiKey: '',
   model: 'gpt-image-1',
-  quality: 'high'
+  quality: 'high',
+  timeoutMs: 45000,
+  maxRetries: 2,
+  batchDelayMs: 600
 };
 
 function ratioForSize(deckState: DeckBuilderState): string {
@@ -144,6 +147,12 @@ function readDataUrl(file: File): Promise<string> {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | undefined): ImageGeneratorConfig {
   return {
     provider: 'openai-compatible',
@@ -153,7 +162,19 @@ function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | unde
     quality:
       raw?.quality === 'low' || raw?.quality === 'medium' || raw?.quality === 'high'
         ? raw.quality
-        : DEFAULT_IMAGE_GENERATOR_CONFIG.quality
+        : DEFAULT_IMAGE_GENERATOR_CONFIG.quality,
+    timeoutMs:
+      typeof raw?.timeoutMs === 'number' && Number.isFinite(raw.timeoutMs)
+        ? Math.max(5_000, Math.min(120_000, Math.round(raw.timeoutMs)))
+        : DEFAULT_IMAGE_GENERATOR_CONFIG.timeoutMs,
+    maxRetries:
+      typeof raw?.maxRetries === 'number' && Number.isFinite(raw.maxRetries)
+        ? Math.max(0, Math.min(6, Math.round(raw.maxRetries)))
+        : DEFAULT_IMAGE_GENERATOR_CONFIG.maxRetries,
+    batchDelayMs:
+      typeof raw?.batchDelayMs === 'number' && Number.isFinite(raw.batchDelayMs)
+        ? Math.max(0, Math.min(5_000, Math.round(raw.batchDelayMs)))
+        : DEFAULT_IMAGE_GENERATOR_CONFIG.batchDelayMs
   };
 }
 
@@ -312,6 +333,10 @@ function App(): JSX.Element {
     }
   }
 
+  function onDeleteArtworkForPrompt(promptId: string): void {
+    setGeneratedArtwork((prev) => prev.filter((entry) => entry.promptId !== promptId));
+  }
+
   async function onGenerateAllArtwork(): Promise<void> {
     if (generatedPrompts.length === 0) {
       setImageGenerationError('Generate prompts first.');
@@ -321,9 +346,15 @@ function App(): JSX.Element {
     setImageGenerationError('');
     setIsGeneratingAllArtwork(true);
 
-    for (const prompt of generatedPrompts) {
+    for (let index = 0; index < generatedPrompts.length; index += 1) {
+      const prompt = generatedPrompts[index];
       // eslint-disable-next-line no-await-in-loop
       await onGenerateArtworkForPrompt(prompt);
+      if (index < generatedPrompts.length - 1) {
+        // Small delay to reduce provider rate-limit bursts in batch mode.
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(350);
+      }
     }
 
     setIsGeneratingAllArtwork(false);
@@ -792,7 +823,7 @@ function App(): JSX.Element {
                   disabled={generatedPrompts.length === 0 || isGeneratingAllArtwork}
                   onClick={() => void onGenerateAllArtwork()}
                 >
-                  {isGeneratingAllArtwork ? 'Rendering...' : 'Render All Prompts'}
+                  {isGeneratingAllArtwork ? 'Rendering all...' : 'Render All Prompts'}
                 </button>
                 <button className="sticker bg-pink-300 text-black px-4 py-2 font-black" onClick={clearGeneratedArtwork}>
                   Clear Rendered Art
@@ -818,7 +849,11 @@ function App(): JSX.Element {
                       disabled={generatingPromptIds.includes(prompt.id)}
                       onClick={() => void onGenerateArtworkForPrompt(prompt)}
                     >
-                      {generatingPromptIds.includes(prompt.id) ? 'Rendering...' : 'Render Image'}
+                      {generatingPromptIds.includes(prompt.id)
+                        ? 'Rendering...'
+                        : artworkByPromptId.get(prompt.id)
+                          ? 'Regenerate'
+                          : 'Render Image'}
                     </button>
                     {artworkByPromptId.get(prompt.id) && (
                       <>
@@ -833,6 +868,12 @@ function App(): JSX.Element {
                           onClick={() => applyArtworkToDeckSide(artworkByPromptId.get(prompt.id) as GeneratedArtwork, 'back')}
                         >
                           Apply as Back Design
+                        </button>
+                        <button
+                          className="sticker bg-red-300 text-black px-3 py-1 font-black"
+                          onClick={() => onDeleteArtworkForPrompt(prompt.id)}
+                        >
+                          Delete Image
                         </button>
                       </>
                     )}
