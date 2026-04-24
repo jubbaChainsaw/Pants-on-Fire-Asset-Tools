@@ -51,6 +51,9 @@ export interface ImageGeneratorConfig {
   apiKey: string;
   model: string;
   quality: ImageQuality;
+  timeoutMs: number;
+  maxRetries: number;
+  batchDelayMs: number;
 }
 
 export interface GeneratedArtwork {
