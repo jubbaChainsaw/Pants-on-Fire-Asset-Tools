@@ -65,13 +65,15 @@ function getBackCardInstructions(theme: Theme): string {
 function getFrontCardInstructions(theme: Theme): string {
   return [
     'Create front card design for prompt text overlay.',
-    'Reserve a VERY LARGE centered text-safe panel (rounded rectangle) that uses roughly 75-80% card width and 56-64% card height.',
-    'The safe panel must stay clean and visually quiet for long multi-line prompts.',
-    'Do NOT place characters, icons, logos, heavy textures, or high-contrast patterns inside the text-safe panel.',
-    'Push all decorative artwork to the outer frame, corners, and border only.',
-    'Use matching border style from back card while keeping the center area open.',
-    'If a logo is included, keep it tiny and on the border edge so it never reduces text room.',
-    `Visual motifs should still reference: ${theme.motifs.join(', ')}.`
+    'Front must look like a mostly plain playing card face with maximum text room.',
+    'Use a thin decorative border around the full card edge with target thickness of 0.3cm (about 3-4% of card width).',
+    'Inside the border, keep one large open reading field for prompt text with no extra boxed panel.',
+    'Fill the interior with a single colour or very subtle same-colour gradient from the theme palette.',
+    'Add only a FADED monochrome repeating motif texture in the background (for example revolver + cowboy hat pattern for western themes).',
+    'Pattern texture must be low contrast, soft, and non-distracting so text stays highly readable.',
+    'Do NOT place characters, mascots, logos, titles, badges, explosions, or dense icons on the front face.',
+    'Keep decorative complexity minimal on front; reserve loud visuals for the back design.',
+    `Texture motifs should still reference: ${theme.motifs.join(', ')}.`
   ].join(' ');
 }
 
@@ -82,6 +84,10 @@ function buildPromptBody(
   state: PromptGeneratorState
 ): string {
   const sideInstructions = side === 'back' ? getBackCardInstructions(theme) : getFrontCardInstructions(theme);
+  const styleInstruction =
+    side === 'back'
+      ? 'Card art style: cartoony, colourful, bold outlines, high contrast colours.'
+      : 'Front style requirement: clean and readable playing-card face, low visual noise, subtle texture only.';
 
   const segments = [
     `Theme: ${theme.name}`,
@@ -92,7 +98,7 @@ function buildPromptBody(
     `Resolution target: ${state.resolution}`,
     sideInstructions,
     getAdultModeInstructions(variant),
-    'Card art style: cartoony, colourful, bold outlines, high contrast colours.',
+    styleInstruction,
     'Text readability requirement: leave room for white text with black outline and red text with white outline.',
     `Hard rules: ${HARD_RULES.join('; ')}.`
   ];
