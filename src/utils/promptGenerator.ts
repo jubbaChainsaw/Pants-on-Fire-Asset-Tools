@@ -65,7 +65,7 @@ function getBackCardInstructions(theme: Theme): string {
 function getFrontCardInstructions(theme: Theme): string {
   return [
     'Create front card design for prompt text overlay.',
-    'Reserve a VERY LARGE centered text-safe panel (rounded rectangle) that uses roughly 70-78% card width and 52-62% card height.',
+    'Reserve a VERY LARGE centered text-safe panel (rounded rectangle) that uses roughly 75-80% card width and 56-64% card height.',
     'The safe panel must stay clean and visually quiet for long multi-line prompts.',
     'Do NOT place characters, icons, logos, heavy textures, or high-contrast patterns inside the text-safe panel.',
     'Push all decorative artwork to the outer frame, corners, and border only.',
