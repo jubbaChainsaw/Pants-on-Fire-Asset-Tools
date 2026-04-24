@@ -9,6 +9,15 @@ interface OpenAiImageResponse {
   data?: OpenAiImageItem[];
 }
 
+interface ApiErrorPayload {
+  error?: {
+    message?: string;
+    param?: string;
+    type?: string;
+    code?: string;
+  };
+}
+
 export interface ImageGenerationRequestOptions {
   timeoutMs?: number;
   maxRetries?: number;
@@ -61,6 +70,26 @@ function responseToDataUrl(item: OpenAiImageItem): string {
   throw new Error('Image API did not return b64_json or url.');
 }
 
+function shouldRetryWithoutResponseFormat(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('response_format') &&
+    (normalized.includes('unknown_parameter') ||
+      normalized.includes('unknown parameter') ||
+      normalized.includes('invalid_request_error'))
+  );
+}
+
+function formatApiError(status: number, rawMessage: string): string {
+  try {
+    const parsed = JSON.parse(rawMessage) as ApiErrorPayload;
+    const message = parsed.error?.message?.trim();
+    return `Image generation failed (${status}): ${message || rawMessage || 'Unknown error'}`;
+  } catch {
+    return `Image generation failed (${status}): ${rawMessage || 'Unknown error'}`;
+  }
+}
+
 export async function generateArtworkImage(
   prompt: GeneratedPrompt,
   config: ImageGeneratorConfig,
@@ -76,18 +105,25 @@ export async function generateArtworkImage(
     ...requestOptions
   };
 
-  const body = {
+  const baseBody = {
     model: config.model,
     prompt: prompt.content,
     size: promptState.resolution,
     quality: config.quality,
-    response_format: 'b64_json',
     n: 1
   };
 
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
     try {
+      const requestBody =
+        attempt > 0
+          ? baseBody
+          : {
+              ...baseBody,
+              response_format: 'b64_json'
+            };
+
       const response = await fetchWithTimeout(
         config.endpoint,
         {
@@ -96,20 +132,24 @@ export async function generateArtworkImage(
             'Content-Type': 'application/json',
             Authorization: `Bearer ${config.apiKey}`
           },
-          body: JSON.stringify(body)
+          body: JSON.stringify(requestBody)
         },
         options.timeoutMs
       );
 
       if (!response.ok) {
         const message = await response.text();
+        if (attempt === 0 && shouldRetryWithoutResponseFormat(message)) {
+          // Some OpenAI-compatible providers reject response_format.
+          continue;
+        }
         const retryable = shouldRetryStatus(response.status);
         if (retryable && attempt < options.maxRetries) {
           const backoff = options.initialBackoffMs * 2 ** attempt;
           await sleep(backoff);
           continue;
         }
-        throw new Error(`Image generation failed (${response.status}): ${message || 'Unknown error'}`);
+        throw new Error(formatApiError(response.status, message));
       }
 
       const parsed = (await response.json()) as OpenAiImageResponse;
