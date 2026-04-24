@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg-deep: #0c0018;
+  --bg-mid: #1b0035;
+  --bg-hot: #ff3ec8;
+  --bg-neon: #95ff2f;
+  --bg-pop: #ff7a1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Trebuchet MS', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at 20% 10%, #3d0a6f 0%, transparent 35%),
+    radial-gradient(circle at 80% 0%, #ff2cab 0%, transparent 40%),
+    linear-gradient(140deg, var(--bg-deep), var(--bg-mid));
+  color: #fff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.sticker {
+  border: 3px solid #000;
+  border-radius: 1rem;
+  box-shadow: 0 8px 0 #000;
+}
+
+.neon-panel {
+  border: 3px solid #000;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 10px 0 #000;
+}
+
+.warning-label {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  border: 2px solid #000;
+  background: var(--bg-pop);
+  color: #111;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.card-preview {
+  aspect-ratio: 2.5 / 3.5;
+  border: 3px dashed #fff;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 0.75rem;
+}
