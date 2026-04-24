@@ -5,6 +5,8 @@ import {
   DeckBuilderState,
   GeneratedCardText,
   GeneratedPrompt,
+  GeneratedArtwork,
+  ImageGeneratorConfig,
   PromptGeneratorState,
   RoundType,
   Theme
@@ -27,6 +29,7 @@ import {
   parseCardTextJson,
   promptsToText
 } from './utils/exporters';
+import { generateArtworkImage } from './utils/imageGenerator';
 
 function normalizeRoundTypes(rawRoundTypes: RoundType[]): RoundType[] {
   const byId = new Map(rawRoundTypes.map((roundType) => [roundType.id, roundType]));
@@ -58,6 +61,8 @@ const STORAGE_KEYS = {
   roundTypes: 'pof_round_types_v1',
   promptState: 'pof_prompt_state_v1',
   generatedPrompts: 'pof_generated_prompts_v1',
+  imageGeneratorConfig: 'pof_image_generator_config_v1',
+  generatedArtwork: 'pof_generated_artwork_v1',
   cardTextState: 'pof_card_text_state_v1',
   generatedCardTexts: 'pof_generated_card_texts_v1',
   deckState: 'pof_deck_state_v1'
@@ -100,6 +105,14 @@ const DEFAULT_DECK_STATE: DeckBuilderState = {
   bleedGuides: true
 };
 
+const DEFAULT_IMAGE_GENERATOR_CONFIG: ImageGeneratorConfig = {
+  provider: 'openai-compatible',
+  endpoint: 'https://api.openai.com/v1/images/generations',
+  apiKey: '',
+  model: 'gpt-image-1',
+  quality: 'high'
+};
+
 function ratioForSize(deckState: DeckBuilderState): string {
   if (deckState.cardSize === 'poker') return '63mm x 88mm';
   if (deckState.cardSize === 'tarot') return '70mm x 120mm';
@@ -128,6 +141,56 @@ function readDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('Failed to read image file'));
     reader.readAsDataURL(file);
+  });
+}
+
+function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | undefined): ImageGeneratorConfig {
+  return {
+    provider: 'openai-compatible',
+    endpoint: raw?.endpoint?.trim() || DEFAULT_IMAGE_GENERATOR_CONFIG.endpoint,
+    apiKey: raw?.apiKey || '',
+    model: raw?.model?.trim() || DEFAULT_IMAGE_GENERATOR_CONFIG.model,
+    quality:
+      raw?.quality === 'low' || raw?.quality === 'medium' || raw?.quality === 'high'
+        ? raw.quality
+        : DEFAULT_IMAGE_GENERATOR_CONFIG.quality
+  };
+}
+
+function normalizeGeneratedArtwork(raw: unknown): GeneratedArtwork[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const candidate = entry as Partial<GeneratedArtwork> & { title?: string; imageDataUrl?: string };
+    const promptId = typeof candidate.promptId === 'string' ? candidate.promptId : '';
+    const dataUrl =
+      typeof candidate.dataUrl === 'string'
+        ? candidate.dataUrl
+        : typeof candidate.imageDataUrl === 'string'
+          ? candidate.imageDataUrl
+          : '';
+    if (!promptId || !dataUrl) return [];
+
+    return [
+      {
+        id: typeof candidate.id === 'string' ? candidate.id : `${promptId}-${Date.now()}`,
+        promptId,
+        promptTitle:
+          typeof candidate.promptTitle === 'string'
+            ? candidate.promptTitle
+            : typeof candidate.title === 'string'
+              ? candidate.title
+              : 'Generated artwork',
+        side: candidate.side === 'front' || candidate.side === 'back' ? candidate.side : 'front',
+        variant: candidate.variant === 'adult' ? 'adult' : 'default',
+        dataUrl,
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now()).toISOString()
+      }
+    ];
   });
 }
 
@@ -160,6 +223,15 @@ function App(): JSX.Element {
   const [deckState, setDeckState] = useState<DeckBuilderState>(
     loadFromStorage(STORAGE_KEYS.deckState, DEFAULT_DECK_STATE)
   );
+  const [imageGeneratorConfig, setImageGeneratorConfig] = useState<ImageGeneratorConfig>(
+    normalizeImageGeneratorConfig(loadFromStorage(STORAGE_KEYS.imageGeneratorConfig, DEFAULT_IMAGE_GENERATOR_CONFIG))
+  );
+  const [generatedArtwork, setGeneratedArtwork] = useState<GeneratedArtwork[]>(
+    normalizeGeneratedArtwork(loadFromStorage(STORAGE_KEYS.generatedArtwork, []))
+  );
+  const [generatingPromptIds, setGeneratingPromptIds] = useState<string[]>([]);
+  const [isGeneratingAllArtwork, setIsGeneratingAllArtwork] = useState(false);
+  const [imageGenerationError, setImageGenerationError] = useState('');
   const [copiedMessage, setCopiedMessage] = useState('');
 
   const currentTheme = useMemo(
@@ -174,11 +246,17 @@ function App(): JSX.Element {
     () => roundTypes.find((roundType) => roundType.id === cardTextState.roundTypeId) ?? roundTypes[0],
     [roundTypes, cardTextState.roundTypeId]
   );
+  const artworkByPromptId = useMemo(
+    () => new Map(generatedArtwork.map((artwork) => [artwork.promptId, artwork])),
+    [generatedArtwork]
+  );
 
   useEffect(() => saveToStorage(STORAGE_KEYS.themes, themes), [themes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, normalizeRoundTypes(roundTypes)), [roundTypes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.promptState, promptState), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.imageGeneratorConfig, imageGeneratorConfig), [imageGeneratorConfig]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedArtwork, generatedArtwork), [generatedArtwork]);
   useEffect(() => saveToStorage(STORAGE_KEYS.cardTextState, cardTextState), [cardTextState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedCardTexts, generatedCardTexts), [generatedCardTexts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.deckState, deckState), [deckState]);
@@ -209,7 +287,58 @@ function App(): JSX.Element {
 
   function onGeneratePrompts(): void {
     if (!currentTheme) return;
-    setGeneratedPrompts(generateArtworkPrompts(promptState, currentTheme));
+    const prompts = generateArtworkPrompts(promptState, currentTheme);
+    const promptIds = new Set(prompts.map((prompt) => prompt.id));
+    setGeneratedPrompts(prompts);
+    setGeneratedArtwork((prev) => prev.filter((artwork) => promptIds.has(artwork.promptId)));
+  }
+
+  function getImageGenerationErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message;
+    return 'Unknown image generation error.';
+  }
+
+  async function onGenerateArtworkForPrompt(prompt: GeneratedPrompt): Promise<void> {
+    setImageGenerationError('');
+    setGeneratingPromptIds((prev) => (prev.includes(prompt.id) ? prev : [...prev, prompt.id]));
+
+    try {
+      const artwork = await generateArtworkImage(prompt, imageGeneratorConfig, promptState);
+      setGeneratedArtwork((prev) => [artwork, ...prev.filter((entry) => entry.promptId !== prompt.id)]);
+    } catch (error) {
+      setImageGenerationError(`Failed for "${prompt.title}": ${getImageGenerationErrorMessage(error)}`);
+    } finally {
+      setGeneratingPromptIds((prev) => prev.filter((id) => id !== prompt.id));
+    }
+  }
+
+  async function onGenerateAllArtwork(): Promise<void> {
+    if (generatedPrompts.length === 0) {
+      setImageGenerationError('Generate prompts first.');
+      return;
+    }
+
+    setImageGenerationError('');
+    setIsGeneratingAllArtwork(true);
+
+    for (const prompt of generatedPrompts) {
+      // eslint-disable-next-line no-await-in-loop
+      await onGenerateArtworkForPrompt(prompt);
+    }
+
+    setIsGeneratingAllArtwork(false);
+  }
+
+  function clearGeneratedArtwork(): void {
+    setGeneratedArtwork([]);
+    setImageGenerationError('');
+  }
+
+  function applyArtworkToDeckSide(artwork: GeneratedArtwork, side: 'front' | 'back'): void {
+    setDeckState((prev) =>
+      side === 'front' ? { ...prev, frontDesignDataUrl: artwork.dataUrl } : { ...prev, backDesignDataUrl: artwork.dataUrl }
+    );
+    setCopiedMessage(`${side === 'front' ? 'Front' : 'Back'} design updated from rendered artwork.`);
   }
 
   function onGenerateCardTexts(): void {
@@ -265,11 +394,8 @@ function App(): JSX.Element {
   }
 
   function onExportFullPdf(): void {
-    exportDeckPdf({
-      title: deckState.deckName,
-      cardTexts: parseDeckTextInput(deckState.textInput),
+    void exportDeckPdf(deckState.deckName, parseDeckTextInput(deckState.textInput), true, {
       cardsPerPage: deckState.cardsPerPage,
-      includeBack: true,
       frontDesignDataUrl: deckState.frontDesignDataUrl,
       backDesignDataUrl: deckState.backDesignDataUrl,
       textStyle: deckState.textStyle,
@@ -282,11 +408,8 @@ function App(): JSX.Element {
   }
 
   function onExportFrontPdf(): void {
-    exportDeckPdf({
-      title: `${deckState.deckName}-front`,
-      cardTexts: parseDeckTextInput(deckState.textInput),
+    void exportDeckPdf(`${deckState.deckName}-front`, parseDeckTextInput(deckState.textInput), false, {
       cardsPerPage: deckState.cardsPerPage,
-      includeBack: false,
       frontDesignDataUrl: deckState.frontDesignDataUrl,
       backDesignDataUrl: deckState.backDesignDataUrl,
       textStyle: deckState.textStyle,
@@ -299,11 +422,8 @@ function App(): JSX.Element {
   }
 
   function onExportBackPdf(): void {
-    exportDeckPdf({
-      title: `${deckState.deckName}-back`,
-      cardTexts: parseDeckTextInput(deckState.textInput),
+    void exportDeckPdf(`${deckState.deckName}-back`, parseDeckTextInput(deckState.textInput), true, {
       cardsPerPage: deckState.cardsPerPage,
-      includeBack: true,
       frontDesignDataUrl: deckState.frontDesignDataUrl,
       backDesignDataUrl: deckState.backDesignDataUrl,
       textStyle: deckState.textStyle,
@@ -368,6 +488,8 @@ function App(): JSX.Element {
       roundTypes,
       promptState,
       generatedPrompts,
+      imageGeneratorConfig,
+      generatedArtwork,
       cardTextState,
       generatedCardTexts,
       deckState
@@ -381,10 +503,12 @@ function App(): JSX.Element {
     if (parsed.themes?.length) setThemes(parsed.themes);
     if (parsed.roundTypes?.length) {
       const filtered = parsed.roundTypes.filter((roundType) => ROUND_TYPE_ID_SET.has(roundType.id));
-      if (filtered.length > 0) setRoundTypes(filtered as RoundType[]);
+      if (filtered.length > 0) setRoundTypes(normalizeRoundTypes(filtered as RoundType[]));
     }
     if (parsed.promptState) setPromptState(parsed.promptState);
     if (parsed.generatedPrompts) setGeneratedPrompts(parsed.generatedPrompts);
+    if (parsed.imageGeneratorConfig) setImageGeneratorConfig(normalizeImageGeneratorConfig(parsed.imageGeneratorConfig));
+    if (parsed.generatedArtwork) setGeneratedArtwork(normalizeGeneratedArtwork(parsed.generatedArtwork));
     if (parsed.cardTextState) setCardTextState(parsed.cardTextState);
     if (parsed.generatedCardTexts) setGeneratedCardTexts(parsed.generatedCardTexts);
     if (parsed.deckState) setDeckState(parsed.deckState);
@@ -441,7 +565,7 @@ function App(): JSX.Element {
               Generates strict game-ready card art prompts with hard one-card enforcement.
             </p>
             <p className="text-white/80 mt-2 text-sm">
-              This tool does not render art directly. Use the generated prompts in your external image model/tool of choice.
+              Generate prompts first, then use the built-in image renderer below (or export prompts for external tools).
             </p>
 
             <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
@@ -578,6 +702,108 @@ function App(): JSX.Element {
               <p className="text-sm text-white mt-1">{getNegativePrompt()}</p>
             </div>
 
+            <div className="mt-4 neon-panel p-4 bg-black/50">
+              <h3 className="font-black text-orange-300">Image Generation (Built In)</h3>
+              <p className="text-sm text-white/90 mt-1">
+                Render prompt outputs directly into card art. Your API key stays local in browser storage.
+              </p>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Provider
+                  <select
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={imageGeneratorConfig.provider}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        provider: event.target.value as ImageGeneratorConfig['provider']
+                      }))
+                    }
+                  >
+                    <option value="openai-compatible">OpenAI-Compatible</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  API Endpoint
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={imageGeneratorConfig.endpoint}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        endpoint: event.target.value
+                      }))
+                    }
+                    placeholder="https://api.openai.com/v1/images/generations"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Model
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={imageGeneratorConfig.model}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        model: event.target.value
+                      }))
+                    }
+                    placeholder="gpt-image-1"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Quality
+                  <select
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={imageGeneratorConfig.quality}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        quality: event.target.value as ImageGeneratorConfig['quality']
+                      }))
+                    }
+                  >
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm md:col-span-2">
+                  API Key
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    type="password"
+                    value={imageGeneratorConfig.apiKey}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        apiKey: event.target.value
+                      }))
+                    }
+                    placeholder="Paste API key"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  className="sticker bg-lime-300 text-black px-4 py-2 font-black disabled:opacity-50"
+                  disabled={generatedPrompts.length === 0 || isGeneratingAllArtwork}
+                  onClick={() => void onGenerateAllArtwork()}
+                >
+                  {isGeneratingAllArtwork ? 'Rendering...' : 'Render All Prompts'}
+                </button>
+                <button className="sticker bg-pink-300 text-black px-4 py-2 font-black" onClick={clearGeneratedArtwork}>
+                  Clear Rendered Art
+                </button>
+              </div>
+
+              {imageGenerationError && (
+                <div className="mt-3 sticker bg-red-300 text-black p-3 font-bold">{imageGenerationError}</div>
+              )}
+            </div>
+
             <div className="mt-4 space-y-3">
               {generatedPrompts.length === 0 && (
                 <div className="sticker bg-black/50 p-4 text-white">No generated prompts yet.</div>
@@ -586,6 +812,40 @@ function App(): JSX.Element {
                 <article key={prompt.id} className="neon-panel p-3 bg-black/50">
                   <h4 className="font-black text-lime-300">{prompt.title}</h4>
                   <pre className="mt-2 text-xs md:text-sm whitespace-pre-wrap break-words text-white">{prompt.content}</pre>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      className="sticker bg-lime-300 text-black px-3 py-1 font-black disabled:opacity-50"
+                      disabled={generatingPromptIds.includes(prompt.id)}
+                      onClick={() => void onGenerateArtworkForPrompt(prompt)}
+                    >
+                      {generatingPromptIds.includes(prompt.id) ? 'Rendering...' : 'Render Image'}
+                    </button>
+                    {artworkByPromptId.get(prompt.id) && (
+                      <>
+                        <button
+                          className="sticker bg-cyan-300 text-black px-3 py-1 font-black"
+                          onClick={() => applyArtworkToDeckSide(artworkByPromptId.get(prompt.id) as GeneratedArtwork, 'front')}
+                        >
+                          Apply as Front Design
+                        </button>
+                        <button
+                          className="sticker bg-orange-300 text-black px-3 py-1 font-black"
+                          onClick={() => applyArtworkToDeckSide(artworkByPromptId.get(prompt.id) as GeneratedArtwork, 'back')}
+                        >
+                          Apply as Back Design
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {artworkByPromptId.get(prompt.id) && (
+                    <div className="mt-3">
+                      <img
+                        src={(artworkByPromptId.get(prompt.id) as GeneratedArtwork).dataUrl}
+                        alt={`${prompt.title} rendered artwork`}
+                        className="w-full max-w-xs rounded border border-white/20"
+                      />
+                    </div>
+                  )}
                 </article>
               ))}
             </div>

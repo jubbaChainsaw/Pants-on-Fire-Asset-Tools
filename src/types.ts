@@ -42,6 +42,27 @@ export interface GeneratedPrompt {
   content: string;
 }
 
+export type ImageProvider = 'openai-compatible';
+export type ImageQuality = 'low' | 'medium' | 'high';
+
+export interface ImageGeneratorConfig {
+  provider: ImageProvider;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  quality: ImageQuality;
+}
+
+export interface GeneratedArtwork {
+  id: string;
+  promptId: string;
+  promptTitle: string;
+  side: CardType;
+  variant: 'default' | 'adult';
+  dataUrl: string;
+  createdAt: string;
+}
+
 export type CardTextVersion = 'default' | 'adult';
 export type CardTextTone = 'silly' | 'sarcastic' | 'dark humour' | 'british humour' | 'party game' | 'chaotic';
 
@@ -91,6 +112,8 @@ export interface AppExportBundle {
   roundTypes: RoundType[];
   promptState: PromptGeneratorState;
   generatedPrompts: GeneratedPrompt[];
+  imageGeneratorConfig?: ImageGeneratorConfig;
+  generatedArtwork?: GeneratedArtwork[];
   cardTextState: CardTextGeneratorState;
   generatedCardTexts: GeneratedCardText[];
   deckState: DeckBuilderState;
