@@ -69,13 +69,15 @@ const STORAGE_KEYS = {
   deckState: 'pof_deck_state_v1'
 };
 
+const STANDARD_GAME_ASSET_SIZE: PromptResolution = '1024x1536';
+
 const DEFAULT_PROMPT_STATE: PromptGeneratorState = {
   themeId: DEFAULT_THEMES[0].id,
   cardType: 'back',
   version: 'default',
   styleIntensity: 'colourful',
   tone: 'party',
-  resolution: '1024x1434',
+  resolution: STANDARD_GAME_ASSET_SIZE,
   strictMode: true
 };
 
@@ -186,6 +188,33 @@ function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | unde
   };
 }
 
+function normalizePromptState(raw: Partial<PromptGeneratorState> | undefined): PromptGeneratorState {
+  return {
+    themeId: raw?.themeId || DEFAULT_PROMPT_STATE.themeId,
+    cardType: raw?.cardType === 'front' || raw?.cardType === 'back' ? raw.cardType : DEFAULT_PROMPT_STATE.cardType,
+    version:
+      raw?.version === 'default' || raw?.version === 'adult' || raw?.version === 'both'
+        ? raw.version
+        : DEFAULT_PROMPT_STATE.version,
+    styleIntensity:
+      raw?.styleIntensity === 'clean' || raw?.styleIntensity === 'colourful' || raw?.styleIntensity === 'crazy'
+        ? raw.styleIntensity
+        : DEFAULT_PROMPT_STATE.styleIntensity,
+    tone:
+      raw?.tone === 'fun' ||
+      raw?.tone === 'dark' ||
+      raw?.tone === 'silly' ||
+      raw?.tone === 'premium' ||
+      raw?.tone === 'party' ||
+      raw?.tone === 'chaotic'
+        ? raw.tone
+        : DEFAULT_PROMPT_STATE.tone,
+    // Keep card image dimensions constant for game-asset consistency.
+    resolution: STANDARD_GAME_ASSET_SIZE,
+    strictMode: typeof raw?.strictMode === 'boolean' ? raw.strictMode : DEFAULT_PROMPT_STATE.strictMode
+  };
+}
+
 function normalizeGeneratedArtwork(raw: unknown): GeneratedArtwork[] {
   if (!Array.isArray(raw)) return [];
 
@@ -238,7 +267,7 @@ function App(): JSX.Element {
     normalizeRoundTypes(loadFromStorage(STORAGE_KEYS.roundTypes, DEFAULT_ROUND_TYPES))
   );
   const [promptState, setPromptState] = useState<PromptGeneratorState>(
-    loadFromStorage(STORAGE_KEYS.promptState, DEFAULT_PROMPT_STATE)
+    normalizePromptState(loadFromStorage(STORAGE_KEYS.promptState, DEFAULT_PROMPT_STATE))
   );
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>(
     loadFromStorage(STORAGE_KEYS.generatedPrompts, [])
@@ -285,7 +314,7 @@ function App(): JSX.Element {
 
   useEffect(() => saveToStorage(STORAGE_KEYS.themes, themes), [themes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, normalizeRoundTypes(roundTypes)), [roundTypes]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.promptState, promptState), [promptState]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.promptState, normalizePromptState(promptState)), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.imageGeneratorConfig, imageGeneratorConfig), [imageGeneratorConfig]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedArtwork, generatedArtwork), [generatedArtwork]);
@@ -568,7 +597,7 @@ function App(): JSX.Element {
       const filtered = parsed.roundTypes.filter((roundType) => ROUND_TYPE_ID_SET.has(roundType.id));
       if (filtered.length > 0) setRoundTypes(normalizeRoundTypes(filtered as RoundType[]));
     }
-    if (parsed.promptState) setPromptState(parsed.promptState);
+    if (parsed.promptState) setPromptState(normalizePromptState(parsed.promptState));
     if (parsed.generatedPrompts) setGeneratedPrompts(parsed.generatedPrompts);
     if (parsed.imageGeneratorConfig) setImageGeneratorConfig(normalizeImageGeneratorConfig(parsed.imageGeneratorConfig));
     if (parsed.generatedArtwork) setGeneratedArtwork(normalizeGeneratedArtwork(parsed.generatedArtwork));
@@ -719,20 +748,13 @@ function App(): JSX.Element {
               </label>
 
               <label className="flex flex-col gap-1 font-bold">
-                Resolution
-                <select
+                Render Size (Locked Standard)
+                <input
                   className="sticker px-3 py-2 bg-black text-lime-300"
-                  value={promptState.resolution}
-                  onChange={(event) =>
-                    setPromptState((prev) => ({
-                      ...prev,
-                      resolution: event.target.value as PromptGeneratorState['resolution']
-                    }))
-                  }
-                >
-                  <option value="1024x1434">1024x1434</option>
-                  <option value="2048x2868">2048x2868</option>
-                </select>
+                  value={STANDARD_GAME_ASSET_SIZE}
+                  readOnly
+                  disabled
+                />
               </label>
             </div>
 
