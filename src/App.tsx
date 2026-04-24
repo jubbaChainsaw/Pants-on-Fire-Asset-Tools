@@ -15,7 +15,7 @@ import { DEFAULT_THEMES } from './data/defaultThemes';
 import { DEFAULT_ROUND_TYPES, ROUND_TYPE_ID_SET } from './data/defaultRoundTypes';
 import { generateArtworkPrompts, getNegativePrompt } from './utils/promptGenerator';
 import { generateCardTexts } from './utils/cardTextGenerator';
-import { loadFromStorage, saveToStorage } from './utils/storage';
+import { loadFromStorage, saveToStorage, trySaveToStorage } from './utils/storage';
 import {
   cardTextsToCsv,
   copyToClipboard,
@@ -252,6 +252,31 @@ function normalizeGeneratedArtwork(raw: unknown): GeneratedArtwork[] {
   });
 }
 
+function persistGeneratedArtworkForStorage(artwork: GeneratedArtwork[]): {
+  ok: boolean;
+  persistedCount: number;
+  reason?: 'quota' | 'unavailable' | 'unknown';
+} {
+  let candidate = artwork;
+  while (candidate.length > 0) {
+    const result = trySaveToStorage(STORAGE_KEYS.generatedArtwork, candidate);
+    if (result.ok) {
+      return { ok: true, persistedCount: candidate.length };
+    }
+    if (result.reason !== 'quota') {
+      return { ok: false, persistedCount: 0, reason: result.reason };
+    }
+    // Keep newest entries first and trim oldest until it fits.
+    candidate = candidate.slice(0, -1);
+  }
+
+  const emptyWrite = trySaveToStorage(STORAGE_KEYS.generatedArtwork, []);
+  if (emptyWrite.ok) {
+    return { ok: true, persistedCount: 0 };
+  }
+  return { ok: false, persistedCount: 0, reason: emptyWrite.reason };
+}
+
 function App(): JSX.Element {
   const [activeTab, setActiveTab] = useState(
     'prompt-generator' as
@@ -287,6 +312,7 @@ function App(): JSX.Element {
   const [generatedArtwork, setGeneratedArtwork] = useState<GeneratedArtwork[]>(
     normalizeGeneratedArtwork(loadFromStorage(STORAGE_KEYS.generatedArtwork, []))
   );
+  const [artworkStorageWarning, setArtworkStorageWarning] = useState('');
   const [generatingPromptIds, setGeneratingPromptIds] = useState<string[]>([]);
   const [isGeneratingAllArtwork, setIsGeneratingAllArtwork] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 });
@@ -317,7 +343,22 @@ function App(): JSX.Element {
   useEffect(() => saveToStorage(STORAGE_KEYS.promptState, normalizePromptState(promptState)), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.imageGeneratorConfig, imageGeneratorConfig), [imageGeneratorConfig]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.generatedArtwork, generatedArtwork), [generatedArtwork]);
+  useEffect(() => {
+    const result = persistGeneratedArtworkForStorage(generatedArtwork);
+    if (!result.ok) {
+      setArtworkStorageWarning(
+        'Browser storage is unavailable right now. Rendered images will remain only until this tab is closed.'
+      );
+      return;
+    }
+    if (result.persistedCount < generatedArtwork.length) {
+      setArtworkStorageWarning(
+        `Only the ${result.persistedCount} most recent rendered image${result.persistedCount === 1 ? '' : 's'} can be kept in browser storage.`
+      );
+      return;
+    }
+    setArtworkStorageWarning('');
+  }, [generatedArtwork]);
   useEffect(() => saveToStorage(STORAGE_KEYS.cardTextState, cardTextState), [cardTextState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedCardTexts, generatedCardTexts), [generatedCardTexts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.deckState, deckState), [deckState]);
@@ -958,6 +999,9 @@ function App(): JSX.Element {
 
               {imageGenerationError && (
                 <div className="mt-3 sticker bg-red-300 text-black p-3 font-bold">{imageGenerationError}</div>
+              )}
+              {artworkStorageWarning && (
+                <div className="mt-3 sticker bg-yellow-300 text-black p-3 font-bold">{artworkStorageWarning}</div>
               )}
             </div>
 
