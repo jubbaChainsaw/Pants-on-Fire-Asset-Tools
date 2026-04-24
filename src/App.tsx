@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppExportBundle,
   CardTextGeneratorState,
@@ -30,6 +30,7 @@ import {
   promptsToText
 } from './utils/exporters';
 import { generateArtworkImage } from './utils/imageGenerator';
+import { Progress } from './components/ui/progress';
 
 function normalizeRoundTypes(rawRoundTypes: RoundType[]): RoundType[] {
   const byId = new Map(rawRoundTypes.map((roundType) => [roundType.id, roundType]));
@@ -153,6 +154,13 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function downloadDataUrlFile(filename: string, dataUrl: string): void {
+  const anchor = document.createElement('a');
+  anchor.href = dataUrl;
+  anchor.download = filename;
+  anchor.click();
+}
+
 function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | undefined): ImageGeneratorConfig {
   return {
     provider: 'openai-compatible',
@@ -252,8 +260,11 @@ function App(): JSX.Element {
   );
   const [generatingPromptIds, setGeneratingPromptIds] = useState<string[]>([]);
   const [isGeneratingAllArtwork, setIsGeneratingAllArtwork] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 });
+  const [batchCancelRequested, setBatchCancelRequested] = useState(false);
   const [imageGenerationError, setImageGenerationError] = useState('');
   const [copiedMessage, setCopiedMessage] = useState('');
+  const batchCancelRequestedRef = useRef(false);
 
   const currentTheme = useMemo(
     () => themes.find((theme) => theme.id === promptState.themeId) ?? themes[0],
@@ -344,22 +355,36 @@ function App(): JSX.Element {
     }
 
     setImageGenerationError('');
+    batchCancelRequestedRef.current = false;
+    setBatchCancelRequested(false);
     setIsGeneratingAllArtwork(true);
+    setBatchProgress({ completed: 0, total: generatedPrompts.length });
 
     for (let index = 0; index < generatedPrompts.length; index += 1) {
+      if (batchCancelRequestedRef.current) {
+        setImageGenerationError('Batch render canceled.');
+        break;
+      }
       const prompt = generatedPrompts[index];
       // eslint-disable-next-line no-await-in-loop
       await onGenerateArtworkForPrompt(prompt);
+      setBatchProgress({ completed: index + 1, total: generatedPrompts.length });
       if (index < generatedPrompts.length - 1) {
         // Small delay to reduce provider rate-limit bursts in batch mode.
         // eslint-disable-next-line no-await-in-loop
-        await sleep(350);
+        await sleep(imageGeneratorConfig.batchDelayMs);
       }
     }
 
     setIsGeneratingAllArtwork(false);
+    batchCancelRequestedRef.current = false;
+    setBatchCancelRequested(false);
   }
 
+  function onCancelGenerateAllArtwork(): void {
+    batchCancelRequestedRef.current = true;
+    setBatchCancelRequested(true);
+  }
   function clearGeneratedArtwork(): void {
     setGeneratedArtwork([]);
     setImageGenerationError('');
@@ -370,6 +395,13 @@ function App(): JSX.Element {
       side === 'front' ? { ...prev, frontDesignDataUrl: artwork.dataUrl } : { ...prev, backDesignDataUrl: artwork.dataUrl }
     );
     setCopiedMessage(`${side === 'front' ? 'Front' : 'Back'} design updated from rendered artwork.`);
+  }
+
+  function onDownloadArtwork(prompt: GeneratedPrompt): void {
+    const artwork = artworkByPromptId.get(prompt.id);
+    if (!artwork) return;
+    const safeName = prompt.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    downloadDataUrlFile(`${safeName || 'rendered-art'}.png`, artwork.dataUrl);
   }
 
   function onGenerateCardTexts(): void {
@@ -800,6 +832,54 @@ function App(): JSX.Element {
                     <option value="high">high</option>
                   </select>
                 </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Timeout (ms)
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    type="number"
+                    min={5000}
+                    max={120000}
+                    value={imageGeneratorConfig.timeoutMs}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        timeoutMs: Math.max(5000, Math.min(120000, Number(event.target.value) || prev.timeoutMs))
+                      }))
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Max retries
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    type="number"
+                    min={0}
+                    max={6}
+                    value={imageGeneratorConfig.maxRetries}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        maxRetries: Math.max(0, Math.min(6, Number(event.target.value) || 0))
+                      }))
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Batch delay (ms)
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    type="number"
+                    min={0}
+                    max={5000}
+                    value={imageGeneratorConfig.batchDelayMs}
+                    onChange={(event) =>
+                      setImageGeneratorConfig((prev) => ({
+                        ...prev,
+                        batchDelayMs: Math.max(0, Math.min(5000, Number(event.target.value) || 0))
+                      }))
+                    }
+                  />
+                </label>
                 <label className="flex flex-col gap-1 font-bold text-sm md:col-span-2">
                   API Key
                   <input
@@ -825,10 +905,34 @@ function App(): JSX.Element {
                 >
                   {isGeneratingAllArtwork ? 'Rendering all...' : 'Render All Prompts'}
                 </button>
-                <button className="sticker bg-pink-300 text-black px-4 py-2 font-black" onClick={clearGeneratedArtwork}>
+                <button
+                  className="sticker bg-yellow-300 text-black px-4 py-2 font-black disabled:opacity-50"
+                  disabled={!isGeneratingAllArtwork || batchCancelRequested}
+                  onClick={onCancelGenerateAllArtwork}
+                >
+                  {batchCancelRequested ? 'Canceling...' : 'Cancel Batch'}
+                </button>
+                <button
+                  className="sticker bg-pink-300 text-black px-4 py-2 font-black"
+                  onClick={clearGeneratedArtwork}
+                >
                   Clear Rendered Art
                 </button>
               </div>
+              {isGeneratingAllArtwork && (
+                <div className="mt-3">
+                  <div className="text-xs text-white/90 mb-1">
+                    Batch progress: {batchProgress.completed}/{batchProgress.total}
+                  </div>
+                  <Progress
+                    value={
+                      batchProgress.total > 0
+                        ? (batchProgress.completed / batchProgress.total) * 100
+                        : 0
+                    }
+                  />
+                </div>
+              )}
 
               {imageGenerationError && (
                 <div className="mt-3 sticker bg-red-300 text-black p-3 font-bold">{imageGenerationError}</div>
@@ -874,6 +978,12 @@ function App(): JSX.Element {
                           onClick={() => onDeleteArtworkForPrompt(prompt.id)}
                         >
                           Delete Image
+                        </button>
+                        <button
+                          className="sticker bg-violet-300 text-black px-3 py-1 font-black"
+                          onClick={() => onDownloadArtwork(prompt)}
+                        >
+                          Download Image
                         </button>
                       </>
                     )}
