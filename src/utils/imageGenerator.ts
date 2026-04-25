@@ -144,13 +144,15 @@ async function normalizeGeneratedImageSize(
     throw new Error('Could not initialize canvas context for image normalization.');
   }
 
-  const scale = Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight);
+  const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
   const drawWidth = sourceWidth * scale;
   const drawHeight = sourceHeight * scale;
   const offsetX = (targetWidth - drawWidth) / 2;
   const offsetY = (targetHeight - drawHeight) / 2;
 
   context.clearRect(0, 0, targetWidth, targetHeight);
+  context.fillStyle = '#000000';
+  context.fillRect(0, 0, targetWidth, targetHeight);
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 
   return canvas.toDataURL('image/png');
