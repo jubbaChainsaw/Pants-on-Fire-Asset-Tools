@@ -10,7 +10,7 @@ import {
   StyleIntensity,
   Theme
 } from './types';
-import { DEFAULT_THEMES } from './data/defaultThemes';
+import { DEFAULT_BASE_THEME, DEFAULT_THEMES } from './data/defaultThemes';
 import { DEFAULT_ROUND_TYPES, ROUND_TYPE_ID_SET } from './data/defaultRoundTypes';
 import { generateArtworkPrompts, getNegativePrompt } from './utils/promptGenerator';
 import { loadFromStorage, saveToStorage, trySaveToStorage } from './utils/storage';
@@ -58,7 +58,6 @@ interface ArtworkPrompt extends GeneratedPrompt {
 }
 
 interface CategoryLogoCreatorState {
-  themeId: string;
   categoryName: string;
   styleIntensity: StyleIntensity;
   tone: PromptTone;
@@ -66,7 +65,6 @@ interface CategoryLogoCreatorState {
 
 interface GameTypeLogoCreatorState {
   roundTypeId: string;
-  categoryName: string;
   styleIntensity: StyleIntensity;
   tone: PromptTone;
 }
@@ -104,7 +102,6 @@ const DEFAULT_THEME_CARD_STATE: PromptGeneratorState = {
 };
 
 const DEFAULT_CATEGORY_LOGO_STATE: CategoryLogoCreatorState = {
-  themeId: DEFAULT_THEMES[0].id,
   categoryName: 'General',
   styleIntensity: 'colourful',
   tone: 'party'
@@ -112,7 +109,6 @@ const DEFAULT_CATEGORY_LOGO_STATE: CategoryLogoCreatorState = {
 
 const DEFAULT_GAME_TYPE_LOGO_STATE: GameTypeLogoCreatorState = {
   roundTypeId: DEFAULT_ROUND_TYPES[0].id,
-  categoryName: 'General',
   styleIntensity: 'colourful',
   tone: 'party'
 };
@@ -150,7 +146,8 @@ const ADULT_LIAR_VARIANTS = [
   'Keep it spicy-but-safe: suggestive tone, zero explicit detail.'
 ];
 
-const FIXED_DECK_THEME_ID = 'default';
+const BASE_THEME_ID = 'default';
+const FIXED_DECK_THEME_ID = BASE_THEME_ID;
 
 const SHARED_DECK_BACK_STYLE_CONSTRAINTS = [
   `Render size must be exactly ${STANDARD_GAME_ASSET_SIZE} (portrait).`,
@@ -254,7 +251,6 @@ function normalizeImageGeneratorConfig(raw: Partial<ImageGeneratorConfig> | unde
 
 function normalizeCategoryLogoState(raw: Partial<CategoryLogoCreatorState> | undefined): CategoryLogoCreatorState {
   return {
-    themeId: raw?.themeId || DEFAULT_CATEGORY_LOGO_STATE.themeId,
     categoryName: raw?.categoryName?.trim() || DEFAULT_CATEGORY_LOGO_STATE.categoryName,
     styleIntensity:
       raw?.styleIntensity === 'clean' || raw?.styleIntensity === 'colourful' || raw?.styleIntensity === 'crazy'
@@ -278,7 +274,7 @@ function normalizeGameTypeLogoState(raw: Partial<GameTypeLogoCreatorState> | und
       typeof raw?.roundTypeId === 'string' && ROUND_TYPE_ID_SET.has(raw.roundTypeId)
         ? raw.roundTypeId
         : DEFAULT_GAME_TYPE_LOGO_STATE.roundTypeId,
-    categoryName: raw?.categoryName?.trim() || DEFAULT_GAME_TYPE_LOGO_STATE.categoryName,
+    gameTypeNameOverride: raw?.gameTypeNameOverride?.trim() || '',
     styleIntensity:
       raw?.styleIntensity === 'clean' || raw?.styleIntensity === 'colourful' || raw?.styleIntensity === 'crazy'
         ? raw.styleIntensity
@@ -483,6 +479,11 @@ function normalizeThemes(rawThemes: Theme[]): Theme[] {
     })
     .filter((theme): theme is Theme => Boolean(theme));
 
+  const hasDefaultTheme = normalized.some((theme) => theme.id === DEFAULT_BASE_THEME.id);
+  if (!hasDefaultTheme) {
+    normalized.unshift(DEFAULT_BASE_THEME);
+  }
+
   const deduped: Theme[] = [];
   const usedIds = new Set<string>();
   for (const theme of normalized) {
@@ -495,7 +496,12 @@ function normalizeThemes(rawThemes: Theme[]): Theme[] {
     usedIds.add(nextId);
     deduped.push({ ...theme, id: nextId });
   }
-  return deduped.length > 0 ? deduped : DEFAULT_THEMES;
+  if (deduped.length === 0) return DEFAULT_THEMES;
+  const defaultThemeIndex = deduped.findIndex((theme) => theme.id === DEFAULT_BASE_THEME.id);
+  if (defaultThemeIndex <= 0) return deduped;
+  const [defaultTheme] = deduped.splice(defaultThemeIndex, 1);
+  deduped.unshift(defaultTheme);
+  return deduped;
 }
 
 function mapRoundTypeToAssetKey(roundTypeId: string): string {
@@ -555,6 +561,10 @@ function resolveArtworkAssetFilePath(params: {
     return `/assets/themes/${normalizedThemeId}/cards/prompt-front-18.png`;
   }
 
+  if (mappedRoundTypeId === 'prompt') {
+    return `/assets/themes/${normalizedThemeId}/cards/prompt-front.png`;
+  }
+
   const allowedRoundTypes = new Set(['prompt', 'opinion', 'picture', 'grill', 'meme', 'noise', 'offtopic', 'chain']);
   const frontName = allowedRoundTypes.has(mappedRoundTypeId) ? `prompt-front-${mappedRoundTypeId}.png` : 'prompt-front.png';
   return `/assets/themes/${normalizedThemeId}/cards/${frontName}`;
@@ -583,45 +593,31 @@ function buildSharedCardStyleConstraintBlock(): string {
   return `Fixed card styling constraints: ${SHARED_DECK_BACK_STYLE_CONSTRAINTS.join(' ')}`;
 }
 
-function buildCategoryLogoPromptBody(theme: Theme, categoryName: string, variant: 'default' | 'adult', tone: PromptTone): string {
+function buildCategoryLogoPromptBody(categoryName: string, variant: 'default' | 'adult', tone: PromptTone): string {
   const adultMode =
     variant === 'adult'
       ? 'Adult 18+ version: edgy and cheeky language is allowed, but no explicit sexual content, no nudity, no minors.'
       : 'Default version: family-safe playful tone.';
   return [
-    `Theme: ${theme.name}`,
     `Create a SINGLE category logo back card for "${categoryName}".`,
-    'Card purpose: category-logo back card with readable category title and themed iconography.',
+    'Card purpose: category-logo back card with readable category title and category-specific iconography.',
     `Include the exact category title text: "${categoryName}".`,
-    'Use bold cartoony shapes, clear hierarchy, and balanced composition.',
-    `Use motifs from theme palette: ${theme.motifs.join(', ')}.`,
+    'Use bold cartoony shapes, clear hierarchy, and balanced composition tied to props/items associated with the category itself.',
     `Tone: ${tone}.`,
     adultMode,
-    buildSharedCardStyleConstraintBlock(),
+    `${buildSharedCardStyleConstraintBlock()} Enforce exact 800x1200 output with no provider-side or post-process size drift.`,
     'Hard rules: one card only; no side-by-side cards; no mockup scene; no background table or hands; keep deck-back outline consistent.'
   ].join('\n');
 }
 
-function buildGameTypeLogoCardBody(roundType: RoundType, categoryName: string, tone: PromptTone): string {
+function buildGameTypeLogoCardBody(roundType: RoundType, tone: PromptTone): string {
   return [
     `Create a SINGLE back-card logo design for game type "${roundType.name}".`,
-    `Secondary category label text: "${categoryName}".`,
     `Include exact game type text: "${roundType.name}".`,
-    'Add supporting thematic iconography and strong logo-style framing following the fixed deck-back style.',
+    `Add iconography and props strongly associated with the "${roundType.name}" game type.`,
     `Tone: ${tone}.`,
-    buildSharedCardStyleConstraintBlock(),
+    `${buildSharedCardStyleConstraintBlock()} The card itself must be the final deliverable and can be reused for the UI banner slot.`,
     'Hard rules: one card only; isolated design; no scene backgrounds; no side-by-side layout.'
-  ].join('\n');
-}
-
-function buildGameTypeBannerBody(roundType: RoundType, categoryName: string, tone: PromptTone): string {
-  return [
-    `Create a banner-style promotional image for game type "${roundType.name}" and category "${categoryName}".`,
-    `Include readable title text: "${roundType.name}".`,
-    'Compose as a bold banner panel within the full canvas, using punchy icon + text lockup and the fixed deck styling language.',
-    `Tone: ${tone}.`,
-    buildSharedCardStyleConstraintBlock(),
-    'Hard rules: single composition only; no collage of multiple cards; no cinematic scene backgrounds.'
   ].join('\n');
 }
 
@@ -906,13 +902,10 @@ function App(): JSX.Element {
     if (!themes.some((theme) => theme.id === themeCardState.themeId)) {
       setThemeCardState((prev) => ({ ...prev, themeId: firstThemeId }));
     }
-    if (!themes.some((theme) => theme.id === categoryLogoState.themeId)) {
-      setCategoryLogoState((prev) => ({ ...prev, themeId: firstThemeId }));
-    }
     if (!themes.some((theme) => theme.id === rulePromptState.themeId)) {
       setRulePromptState((prev) => ({ ...prev, themeId: firstThemeId }));
     }
-  }, [themes, themeCardState.themeId, categoryLogoState.themeId, rulePromptState.themeId]);
+  }, [themes, themeCardState.themeId, rulePromptState.themeId]);
 
   useEffect(() => {
     const firstRoundTypeId = roundTypes[0]?.id || DEFAULT_ROUND_TYPES[0].id;
@@ -967,7 +960,6 @@ function App(): JSX.Element {
 
     setThemes((prev) => normalizeThemes([...prev, createdTheme]));
     setThemeCardState((prev) => ({ ...prev, themeId: createdTheme.id }));
-    setCategoryLogoState((prev) => ({ ...prev, themeId: createdTheme.id }));
     setRulePromptState((prev) => ({ ...prev, themeId: createdTheme.id }));
     setThemeNameDraft('');
     setThemeCreateError('');
@@ -975,7 +967,8 @@ function App(): JSX.Element {
   }
 
   function deleteTheme(index: number): void {
-    if (themes.length <= 1) return;
+  const themeToDelete = themes[index];
+  if (!themeToDelete || themeToDelete.id === DEFAULT_BASE_THEME.id || themes.length <= 1) return;
     setThemes((prev) => normalizeThemes(prev.filter((_, idx) => idx !== index)));
   }
 
@@ -1014,12 +1007,11 @@ function App(): JSX.Element {
   }
 
   function onGenerateCategoryLogoPrompts(): void {
-    const selectedTheme = getTheme(categoryLogoState.themeId);
     const categoryName = categoryLogoState.categoryName.trim() || 'General';
     const categorySlug = slugifyThemeId(categoryName) || 'general';
     const variants: Array<'default' | 'adult'> = ['default', 'adult'];
     const baseRenderState = buildBaseRenderState({
-      themeId: categoryLogoState.themeId,
+      themeId: FIXED_DECK_THEME_ID,
       styleIntensity: categoryLogoState.styleIntensity,
       tone: categoryLogoState.tone,
       cardType: 'back',
@@ -1030,15 +1022,15 @@ function App(): JSX.Element {
     const nextPrompts = variants.map(
       (variant): ArtworkPrompt => ({
         id: createPromptId(`category-${variant}`),
-        themeId: selectedTheme.id,
+        themeId: FIXED_DECK_THEME_ID,
         variant,
         side: 'back',
         title: `${variant === 'adult' ? '18+ ' : ''}${categoryName} category back`,
-        content: buildCategoryLogoPromptBody(selectedTheme, categoryName, variant, categoryLogoState.tone),
+        content: buildCategoryLogoPromptBody(categoryName, variant, categoryLogoState.tone),
         renderContext: {
           tool: 'category-logo',
           target: 'category-card',
-          themeId: categoryLogoState.themeId,
+          themeId: FIXED_DECK_THEME_ID,
           roundTypeId: 'prompt',
           categorySlug,
           renderState: baseRenderState
@@ -1052,7 +1044,6 @@ function App(): JSX.Element {
 
   function onGenerateGameTypeLogoPrompts(): void {
     const selectedRoundType = getRoundType(gameTypeLogoState.roundTypeId);
-    const categoryName = gameTypeLogoState.categoryName.trim() || 'General';
     const baseRenderState = buildBaseRenderState({
       themeId: FIXED_DECK_THEME_ID,
       styleIntensity: gameTypeLogoState.styleIntensity,
@@ -1068,7 +1059,7 @@ function App(): JSX.Element {
       variant: 'default',
       side: 'back',
       title: `${selectedRoundType.name} logo card`,
-      content: buildGameTypeLogoCardBody(selectedRoundType, categoryName, gameTypeLogoState.tone),
+      content: buildGameTypeLogoCardBody(selectedRoundType, gameTypeLogoState.tone),
       renderContext: {
         tool: 'game-type-logo',
         target: 'game-type-logo',
@@ -1078,13 +1069,13 @@ function App(): JSX.Element {
       }
     };
 
-    const bannerPrompt: ArtworkPrompt = {
-      id: createPromptId(`round-banner-${selectedRoundType.id}`),
+    const sharedBannerPathPrompt: ArtworkPrompt = {
+      id: createPromptId(`round-banner-path-${selectedRoundType.id}`),
       themeId: FIXED_DECK_THEME_ID,
       variant: 'default',
       side: 'back',
-      title: `${selectedRoundType.name} banner image`,
-      content: buildGameTypeBannerBody(selectedRoundType, categoryName, gameTypeLogoState.tone),
+      title: `${selectedRoundType.name} logo card (saved to banner path)`,
+      content: logoPrompt.content,
       renderContext: {
         tool: 'game-type-logo',
         target: 'theme-ui-banner',
@@ -1095,7 +1086,7 @@ function App(): JSX.Element {
     };
 
     removeArtworkForPromptSet(gameTypeLogoPrompts);
-    setGameTypeLogoPrompts([logoPrompt, bannerPrompt]);
+    setGameTypeLogoPrompts([logoPrompt, sharedBannerPathPrompt]);
     setImageGenerationError('');
   }
 
@@ -1529,12 +1520,18 @@ function App(): JSX.Element {
                         />
                       </label>
                     </div>
-                    <button
-                      className="mt-3 sticker bg-red-300 text-black px-4 py-2 font-black"
-                      onClick={() => deleteTheme(index)}
-                    >
-                      Delete Theme
-                    </button>
+                    {theme.id === DEFAULT_BASE_THEME.id ? (
+                      <div className="mt-3 text-xs font-black text-cyan-200">
+                        Built-in base theme. Use this for default front/back card creation.
+                      </div>
+                    ) : (
+                      <button
+                        className="mt-3 sticker bg-red-300 text-black px-4 py-2 font-black"
+                        onClick={() => deleteTheme(index)}
+                      >
+                        Delete Theme
+                      </button>
+                    )}
                   </article>
                 ))}
               </div>
@@ -1545,29 +1542,10 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-fuchsia-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Category Logo Card Creator</h2>
               <p className="text-white/90 mt-1">
-                Generates category back card + adult back card using fixed deck-back styling constraints.
+                Generates category back card + adult back card using strict fixed deck card size/outline constraints, styled only from the category name.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
-                <label className="flex flex-col gap-1 font-bold">
-                  Theme style profile
-                  <select
-                    className="sticker px-3 py-2 bg-black text-lime-300"
-                    value={categoryLogoState.themeId}
-                    onChange={(event) =>
-                      setCategoryLogoState((prev) => ({
-                        ...prev,
-                        themeId: event.target.value
-                      }))
-                    }
-                  >
-                    {themes.map((theme) => (
-                      <option key={theme.id} value={theme.id}>
-                        {theme.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="flex flex-col gap-1 font-bold">
                   Category name
                   <input
@@ -1645,7 +1623,7 @@ function App(): JSX.Element {
                     void exportSectionDlc(categoryLogoPrompts, {
                       packId: `${slugifyThemeId(categoryLogoState.categoryName || 'category')}-category-cards`,
                       packLabel: `${categoryLogoState.categoryName || 'Category'} Cards`,
-                      themeId: categoryLogoState.themeId
+                      themeId: FIXED_DECK_THEME_ID
                     })
                   }
                 >
@@ -1815,7 +1793,7 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-indigo-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Game Type Logo Creator</h2>
               <p className="text-white/90 mt-1">
-                Generates game-type logo back card art and matching banner image with fixed deck-back styling constraints.
+                Generates game-type logo card art only (no category text), and saves the same output to both game-type logo and default banner paths.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1837,14 +1815,6 @@ function App(): JSX.Element {
                       </option>
                     ))}
                   </select>
-                </label>
-                <label className="flex flex-col gap-1 font-bold">
-                  Category text
-                  <input
-                    className="sticker px-3 py-2 bg-black text-lime-300"
-                    value={gameTypeLogoState.categoryName}
-                    onChange={(event) => setGameTypeLogoState((prev) => ({ ...prev, categoryName: event.target.value }))}
-                  />
                 </label>
                 <label className="flex flex-col gap-1 font-bold">
                   Style intensity
