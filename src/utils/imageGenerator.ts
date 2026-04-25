@@ -27,9 +27,10 @@ export interface ImageGenerationRequestOptions {
   timeoutMs?: number;
   maxRetries?: number;
   initialBackoffMs?: number;
+  assetPath?: string;
 }
 
-const DEFAULT_REQUEST_OPTIONS: Required<ImageGenerationRequestOptions> = {
+const DEFAULT_REQUEST_OPTIONS: Required<Omit<ImageGenerationRequestOptions, 'assetPath'>> = {
   timeoutMs: 90_000,
   maxRetries: 2,
   initialBackoffMs: 1_000
@@ -225,7 +226,7 @@ export async function generateArtworkImage(
     throw new Error('Image API key is required.');
   }
 
-  const options: Required<ImageGenerationRequestOptions> = {
+  const options: Required<Omit<ImageGenerationRequestOptions, 'assetPath'>> = {
     ...DEFAULT_REQUEST_OPTIONS,
     ...requestOptions
   };
@@ -313,6 +314,7 @@ export async function generateArtworkImage(
         variant: prompt.variant,
         side: prompt.side,
         dataUrl: normalizedDataUrl,
+        assetPath: requestOptions.assetPath || '',
         createdAt: new Date().toISOString()
       };
     } catch (error) {

@@ -36,6 +36,7 @@ export interface PromptGeneratorState {
 
 export interface GeneratedPrompt {
   id: string;
+  themeId?: string;
   variant: 'default' | 'adult';
   side: CardType;
   title: string;
@@ -60,6 +61,7 @@ export interface GeneratedArtwork {
   id: string;
   promptId: string;
   promptTitle: string;
+  assetPath?: string;
   side: CardType;
   variant: 'default' | 'adult';
   dataUrl: string;
