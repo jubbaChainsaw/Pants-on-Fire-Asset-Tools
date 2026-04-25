@@ -36,6 +36,23 @@ npm run dev
 npm run build
 ```
 
+## Android APK (Expo EAS)
+
+Codespaces note: use `eas-cli` via `npx`, not `npx eas`.
+
+```bash
+npm install
+npm run eas:login
+npm run eas:configure
+npm run eas:build:apk
+```
+
+If you need a Play Store bundle instead:
+
+```bash
+npm run eas:build:aab
+```
+
 ## Notes
 
 - Tool title in-app: **Pants on Fire! Asset Tools**
