@@ -65,7 +65,6 @@ interface CategoryLogoCreatorState {
 }
 
 interface GameTypeLogoCreatorState {
-  themeId: string;
   roundTypeId: string;
   categoryName: string;
   styleIntensity: StyleIntensity;
@@ -85,7 +84,6 @@ const STORAGE_KEYS = {
   themes: 'pof_themes_v1',
   roundTypes: 'pof_round_types_v1',
   themeCardState: 'pof_theme_card_state_v2',
-  themeCardRoundTypeId: 'pof_theme_card_round_type_id_v2',
   categoryLogoState: 'pof_category_logo_state_v2',
   gameTypeLogoState: 'pof_game_type_logo_state_v2',
   imageGeneratorConfig: 'pof_image_generator_config_v1',
@@ -113,7 +111,6 @@ const DEFAULT_CATEGORY_LOGO_STATE: CategoryLogoCreatorState = {
 };
 
 const DEFAULT_GAME_TYPE_LOGO_STATE: GameTypeLogoCreatorState = {
-  themeId: DEFAULT_THEMES[0].id,
   roundTypeId: DEFAULT_ROUND_TYPES[0].id,
   categoryName: 'General',
   styleIntensity: 'colourful',
@@ -151,6 +148,17 @@ const ADULT_LIAR_VARIANTS = [
   'Act over-confident, then pivot with a sarcastic line.',
   'Drop one bold clue and play innocent when challenged.',
   'Keep it spicy-but-safe: suggestive tone, zero explicit detail.'
+];
+
+const FIXED_DECK_THEME_ID = 'default';
+
+const SHARED_DECK_BACK_STYLE_CONSTRAINTS = [
+  `Render size must be exactly ${STANDARD_GAME_ASSET_SIZE} (portrait).`,
+  'One single card only, centered, no tilt, no perspective mockup.',
+  'Use fixed deck-back silhouette: rounded rectangle card body.',
+  'Use fixed side outline on all edges: consistent outer border and inner outline frame.',
+  'Keep border thickness and corner radius consistent across category/theme/game-type outputs.',
+  'No cropping, no scene backgrounds, no table, no hands.'
 ];
 
 function normalizeRoundTypes(rawRoundTypes: RoundType[]): RoundType[] {
@@ -266,7 +274,6 @@ function normalizeCategoryLogoState(raw: Partial<CategoryLogoCreatorState> | und
 
 function normalizeGameTypeLogoState(raw: Partial<GameTypeLogoCreatorState> | undefined): GameTypeLogoCreatorState {
   return {
-    themeId: raw?.themeId || DEFAULT_GAME_TYPE_LOGO_STATE.themeId,
     roundTypeId:
       typeof raw?.roundTypeId === 'string' && ROUND_TYPE_ID_SET.has(raw.roundTypeId)
         ? raw.roundTypeId
@@ -572,6 +579,10 @@ function buildBaseRenderState(params: {
   };
 }
 
+function buildSharedCardStyleConstraintBlock(): string {
+  return `Fixed card styling constraints: ${SHARED_DECK_BACK_STYLE_CONSTRAINTS.join(' ')}`;
+}
+
 function buildCategoryLogoPromptBody(theme: Theme, categoryName: string, variant: 'default' | 'adult', tone: PromptTone): string {
   const adultMode =
     variant === 'adult'
@@ -586,34 +597,30 @@ function buildCategoryLogoPromptBody(theme: Theme, categoryName: string, variant
     `Use motifs from theme palette: ${theme.motifs.join(', ')}.`,
     `Tone: ${tone}.`,
     adultMode,
-    `Resolution target: ${STANDARD_GAME_ASSET_SIZE}.`,
-    'Hard rules: one card only; no side-by-side cards; no mockup scene; no background table or hands.'
+    buildSharedCardStyleConstraintBlock(),
+    'Hard rules: one card only; no side-by-side cards; no mockup scene; no background table or hands; keep deck-back outline consistent.'
   ].join('\n');
 }
 
-function buildGameTypeLogoCardBody(theme: Theme, roundType: RoundType, categoryName: string, tone: PromptTone): string {
+function buildGameTypeLogoCardBody(roundType: RoundType, categoryName: string, tone: PromptTone): string {
   return [
-    `Theme: ${theme.name}`,
     `Create a SINGLE back-card logo design for game type "${roundType.name}".`,
     `Secondary category label text: "${categoryName}".`,
     `Include exact game type text: "${roundType.name}".`,
-    'Add supporting thematic iconography and strong logo-style framing.',
-    `Reference motifs: ${theme.motifs.join(', ')}.`,
+    'Add supporting thematic iconography and strong logo-style framing following the fixed deck-back style.',
     `Tone: ${tone}.`,
-    `Resolution target: ${STANDARD_GAME_ASSET_SIZE}.`,
+    buildSharedCardStyleConstraintBlock(),
     'Hard rules: one card only; isolated design; no scene backgrounds; no side-by-side layout.'
   ].join('\n');
 }
 
-function buildGameTypeBannerBody(theme: Theme, roundType: RoundType, categoryName: string, tone: PromptTone): string {
+function buildGameTypeBannerBody(roundType: RoundType, categoryName: string, tone: PromptTone): string {
   return [
-    `Theme: ${theme.name}`,
     `Create a banner-style promotional image for game type "${roundType.name}" and category "${categoryName}".`,
     `Include readable title text: "${roundType.name}".`,
-    'Compose as a bold banner panel within the full canvas, using punchy icon + text lockup.',
-    `Motif references: ${theme.motifs.join(', ')}.`,
+    'Compose as a bold banner panel within the full canvas, using punchy icon + text lockup and the fixed deck styling language.',
     `Tone: ${tone}.`,
-    `Resolution target: ${STANDARD_GAME_ASSET_SIZE}.`,
+    buildSharedCardStyleConstraintBlock(),
     'Hard rules: single composition only; no collage of multiple cards; no cinematic scene backgrounds.'
   ].join('\n');
 }
@@ -627,12 +634,11 @@ function tokenizeWords(value: string): string[] {
     .filter((part) => part.length >= 3);
 }
 
-function makeBannedWords(category: string, roundType: RoundType, theme: Theme, index: number): string[] {
+function makeBannedWords(category: string, roundType: RoundType, index: number): string[] {
   const seed = [
     ...tokenizeWords(category),
     ...tokenizeWords(roundType.name),
-    ...tokenizeWords(roundType.cardType),
-    ...theme.motifs.flatMap((item) => tokenizeWords(item))
+    ...tokenizeWords(roundType.cardType)
   ];
   const rotating = ['liar', 'truth', 'prompt', 'clue', 'bluff', 'topic', 'secret', 'guess', 'imposter', 'suspicion'];
   const unique: string[] = [];
@@ -643,8 +649,99 @@ function makeBannedWords(category: string, roundType: RoundType, theme: Theme, i
   return unique.slice(0, 5);
 }
 
-function buildRulePromptCards(state: RulePromptGeneratorState, roundTypes: RoundType[], themes: Theme[]): RulePromptCardExport[] {
-  const selectedTheme = themes.find((theme) => theme.id === state.themeId) ?? themes[0] ?? DEFAULT_THEMES[0];
+interface PromptScenarioTemplate {
+  hint: string;
+  main: string;
+  liar: string;
+}
+
+const PROMPT_SCENARIO_SETS: Record<string, PromptScenarioTemplate[]> = {
+  prompt: [
+    {
+      hint: 'Everyday Scenario',
+      main: 'Ask a sharp question about "{{category}}" and answer with one specific clue.',
+      liar: 'Ask a nearby question about "{{category}}" but keep your clue vague and adaptable.'
+    },
+    {
+      hint: 'Word-Association Clash',
+      main: 'Give a first-word association for "{{category}}" and defend it with one reason.',
+      liar: 'Give a believable but slightly off association for "{{category}}" and bluff confidence.'
+    }
+  ],
+  opinion: [
+    {
+      hint: 'Hot Take Debate',
+      main: 'State your real opinion on "{{category}}" and justify it in under 10 seconds.',
+      liar: 'Argue the opposite stance on "{{category}}" without sounding forced.'
+    },
+    {
+      hint: 'Rank It',
+      main: 'Rank one "{{category}}" choice as best and defend the ranking.',
+      liar: 'Pick a plausible ranking for "{{category}}" but quietly avoid hard specifics.'
+    }
+  ],
+  picture: [
+    {
+      hint: 'Visual Clue Read',
+      main: 'Describe the most obvious visual clue from a "{{category}}" image in one sentence.',
+      liar: 'Describe a likely visual clue from a "{{category}}" image without overcommitting.'
+    },
+    {
+      hint: 'Detail Spotting',
+      main: 'Call out one concrete foreground detail from a "{{category}}" frame.',
+      liar: 'Invent one safe detail for a "{{category}}" frame and keep it generic.'
+    }
+  ],
+  grill: [
+    {
+      hint: 'Interrogation Question',
+      main: 'Ask one precise interrogation question about "{{category}}" to narrow the topic.',
+      liar: 'Ask a deflecting interrogation question about "{{category}}" to steer suspicion.'
+    },
+    {
+      hint: 'Pressure Probe',
+      main: 'Challenge another player with a follow-up question tied to "{{category}}" context.',
+      liar: 'Use a broad follow-up question tied to "{{category}}" to buy time.'
+    }
+  ],
+  sound: [
+    {
+      hint: 'Audio Inference',
+      main: 'Infer one concrete source from a short "{{category}}" audio clue.',
+      liar: 'Infer a nearby-but-different source from a "{{category}}" audio clue.'
+    },
+    {
+      hint: 'Noise Pattern',
+      main: 'Describe one repeatable sound pattern you hear in a "{{category}}" clip.',
+      liar: 'Describe a plausible pattern for a "{{category}}" clip without locking into details.'
+    }
+  ],
+  video: [
+    {
+      hint: 'Clip Snapshot',
+      main: 'Summarize the key action in a 2-second "{{category}}" clip.',
+      liar: 'Summarize a believable but slightly offset action from a "{{category}}" clip.'
+    },
+    {
+      hint: 'Motion Cue',
+      main: 'Identify one movement cue from the "{{category}}" video clip.',
+      liar: 'Identify a safe movement cue that could fit many "{{category}}" clips.'
+    }
+  ]
+};
+
+function pickPromptScenario(roundType: RoundType, index: number, category: string): PromptScenarioTemplate {
+  const set = PROMPT_SCENARIO_SETS[roundType.id] || PROMPT_SCENARIO_SETS.prompt;
+  const raw = set[index % set.length];
+  const inject = (value: string) => value.replace(/\{\{category\}\}/g, category);
+  return {
+    hint: inject(raw.hint),
+    main: inject(raw.main),
+    liar: inject(raw.liar)
+  };
+}
+
+function buildRulePromptCards(state: RulePromptGeneratorState, roundTypes: RoundType[]): RulePromptCardExport[] {
   const category = state.category.trim() || 'General';
   const count = Math.max(1, Math.min(24, Math.round(state.countPerGameType)));
   const cards: RulePromptCardExport[] = [];
@@ -652,12 +749,12 @@ function buildRulePromptCards(state: RulePromptGeneratorState, roundTypes: Round
   roundTypes.forEach((roundType, roundTypeIndex) => {
     for (let index = 0; index < count; index += 1) {
       const cardIdBase = `${slugifyThemeId(category)}-${roundType.id}-${index + 1}`;
-      const clueTag = `${roundType.name} #${index + 1}`;
-      const coreScenario = `${category} ${roundType.cardType} situation ${index + 1}`;
-      const mainPrompt = `Truthful players receive: "${coreScenario}. Keep clues aligned with ${roundType.name} rules."`;
-      const liarPrompt = `Liar receives: "${category} twist ${roundType.cardType} scenario ${index + 1}. Stay believable while off-target."`;
+      const scenario = pickPromptScenario(roundType, index, category);
+      const clueTag = `${scenario.hint} (${roundType.name} #${index + 1})`;
+      const mainPrompt = scenario.main;
+      const liarPrompt = scenario.liar;
       const liarVariant = DEFAULT_LIAR_VARIANTS[(roundTypeIndex + index) % DEFAULT_LIAR_VARIANTS.length];
-      const bannedWords = makeBannedWords(category, roundType, selectedTheme, index);
+      const bannedWords = makeBannedWords(category, roundType, index);
 
       cards.push({
         id: `${cardIdBase}-default`,
@@ -680,8 +777,8 @@ function buildRulePromptCards(state: RulePromptGeneratorState, roundTypes: Round
           category,
           version: 'adult',
           hint: `${clueTag} 18+ (${state.tone})`,
-          mainPrompt: `18+ truthful prompt: "${coreScenario}. Use cheeky, non-explicit party banter."`,
-          liarPrompt: `18+ liar prompt: "${category} risky twist ${roundType.cardType} scenario ${index + 1}. Bluff boldly but keep it non-explicit."`,
+          mainPrompt: `${mainPrompt} Keep it cheeky and party-style, but non-explicit.`,
+          liarPrompt: `${liarPrompt} Bluff boldly with suggestive tone only (non-explicit).`,
           liarVariant: ADULT_LIAR_VARIANTS[(roundTypeIndex + index) % ADULT_LIAR_VARIANTS.length],
           bannedWords
         });
@@ -713,9 +810,6 @@ function App(): JSX.Element {
   );
   const [themeCardState, setThemeCardState] = useState<PromptGeneratorState>(
     normalizePromptState(loadFromStorage(STORAGE_KEYS.themeCardState, DEFAULT_THEME_CARD_STATE))
-  );
-  const [themeCardRoundTypeId, setThemeCardRoundTypeId] = useState<string>(
-    loadFromStorage(STORAGE_KEYS.themeCardRoundTypeId, DEFAULT_ROUND_TYPES[0].id)
   );
   const [categoryLogoState, setCategoryLogoState] = useState<CategoryLogoCreatorState>(
     normalizeCategoryLogoState(loadFromStorage(STORAGE_KEYS.categoryLogoState, DEFAULT_CATEGORY_LOGO_STATE))
@@ -777,7 +871,6 @@ function App(): JSX.Element {
   useEffect(() => saveToStorage(STORAGE_KEYS.themes, normalizeThemes(themes)), [themes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, normalizeRoundTypes(roundTypes)), [roundTypes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.themeCardState, normalizePromptState(themeCardState)), [themeCardState]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.themeCardRoundTypeId, themeCardRoundTypeId), [themeCardRoundTypeId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.categoryLogoState, normalizeCategoryLogoState(categoryLogoState)), [categoryLogoState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.gameTypeLogoState, normalizeGameTypeLogoState(gameTypeLogoState)), [gameTypeLogoState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rulePromptState, normalizeRulePromptState(rulePromptState)), [rulePromptState]);
@@ -816,23 +909,17 @@ function App(): JSX.Element {
     if (!themes.some((theme) => theme.id === categoryLogoState.themeId)) {
       setCategoryLogoState((prev) => ({ ...prev, themeId: firstThemeId }));
     }
-    if (!themes.some((theme) => theme.id === gameTypeLogoState.themeId)) {
-      setGameTypeLogoState((prev) => ({ ...prev, themeId: firstThemeId }));
-    }
     if (!themes.some((theme) => theme.id === rulePromptState.themeId)) {
       setRulePromptState((prev) => ({ ...prev, themeId: firstThemeId }));
     }
-  }, [themes, themeCardState.themeId, categoryLogoState.themeId, gameTypeLogoState.themeId, rulePromptState.themeId]);
+  }, [themes, themeCardState.themeId, categoryLogoState.themeId, rulePromptState.themeId]);
 
   useEffect(() => {
     const firstRoundTypeId = roundTypes[0]?.id || DEFAULT_ROUND_TYPES[0].id;
-    if (!roundTypes.some((roundType) => roundType.id === themeCardRoundTypeId)) {
-      setThemeCardRoundTypeId(firstRoundTypeId);
-    }
     if (!roundTypes.some((roundType) => roundType.id === gameTypeLogoState.roundTypeId)) {
       setGameTypeLogoState((prev) => ({ ...prev, roundTypeId: firstRoundTypeId }));
     }
-  }, [roundTypes, themeCardRoundTypeId, gameTypeLogoState.roundTypeId]);
+  }, [roundTypes, gameTypeLogoState.roundTypeId]);
 
   function getTheme(themeId: string): Theme {
     return themes.find((theme) => theme.id === themeId) ?? themes[0] ?? DEFAULT_THEMES[0];
@@ -881,7 +968,6 @@ function App(): JSX.Element {
     setThemes((prev) => normalizeThemes([...prev, createdTheme]));
     setThemeCardState((prev) => ({ ...prev, themeId: createdTheme.id }));
     setCategoryLogoState((prev) => ({ ...prev, themeId: createdTheme.id }));
-    setGameTypeLogoState((prev) => ({ ...prev, themeId: createdTheme.id }));
     setRulePromptState((prev) => ({ ...prev, themeId: createdTheme.id }));
     setThemeNameDraft('');
     setThemeCreateError('');
@@ -917,7 +1003,7 @@ function App(): JSX.Element {
           tool: 'theme-card',
           target: 'card-design',
           themeId: themeCardState.themeId,
-          roundTypeId: themeCardRoundTypeId,
+          roundTypeId: 'prompt',
           renderState: normalizePromptState(themeCardState)
         }
       })
@@ -965,11 +1051,10 @@ function App(): JSX.Element {
   }
 
   function onGenerateGameTypeLogoPrompts(): void {
-    const selectedTheme = getTheme(gameTypeLogoState.themeId);
     const selectedRoundType = getRoundType(gameTypeLogoState.roundTypeId);
     const categoryName = gameTypeLogoState.categoryName.trim() || 'General';
     const baseRenderState = buildBaseRenderState({
-      themeId: gameTypeLogoState.themeId,
+      themeId: FIXED_DECK_THEME_ID,
       styleIntensity: gameTypeLogoState.styleIntensity,
       tone: gameTypeLogoState.tone,
       cardType: 'back',
@@ -979,15 +1064,15 @@ function App(): JSX.Element {
 
     const logoPrompt: ArtworkPrompt = {
       id: createPromptId(`round-logo-${selectedRoundType.id}`),
-      themeId: selectedTheme.id,
+      themeId: FIXED_DECK_THEME_ID,
       variant: 'default',
       side: 'back',
       title: `${selectedRoundType.name} logo card`,
-      content: buildGameTypeLogoCardBody(selectedTheme, selectedRoundType, categoryName, gameTypeLogoState.tone),
+      content: buildGameTypeLogoCardBody(selectedRoundType, categoryName, gameTypeLogoState.tone),
       renderContext: {
         tool: 'game-type-logo',
         target: 'game-type-logo',
-        themeId: gameTypeLogoState.themeId,
+        themeId: FIXED_DECK_THEME_ID,
         roundTypeId: selectedRoundType.id,
         renderState: baseRenderState
       }
@@ -995,15 +1080,15 @@ function App(): JSX.Element {
 
     const bannerPrompt: ArtworkPrompt = {
       id: createPromptId(`round-banner-${selectedRoundType.id}`),
-      themeId: selectedTheme.id,
+      themeId: FIXED_DECK_THEME_ID,
       variant: 'default',
       side: 'back',
       title: `${selectedRoundType.name} banner image`,
-      content: buildGameTypeBannerBody(selectedTheme, selectedRoundType, categoryName, gameTypeLogoState.tone),
+      content: buildGameTypeBannerBody(selectedRoundType, categoryName, gameTypeLogoState.tone),
       renderContext: {
         tool: 'game-type-logo',
         target: 'theme-ui-banner',
-        themeId: gameTypeLogoState.themeId,
+        themeId: FIXED_DECK_THEME_ID,
         roundTypeId: selectedRoundType.id,
         renderState: baseRenderState
       }
@@ -1142,7 +1227,7 @@ function App(): JSX.Element {
   }
 
   function onGenerateRulePrompts(): void {
-    const cards = buildRulePromptCards(rulePromptState, roundTypes, themes);
+    const cards = buildRulePromptCards(rulePromptState, roundTypes);
     setRulePromptCards(cards);
     setCopiedMessage(`Generated ${cards.length} rule prompt cards.`);
   }
@@ -1234,21 +1319,21 @@ function App(): JSX.Element {
                         : 'Render Image'}
                   </button>
                   {artwork && (
-                    <button
-                      className="sticker bg-red-300 text-black px-3 py-1 font-black"
-                      onClick={() => onDeleteArtworkForPrompt(prompt.id)}
-                    >
-                      Delete Image
-                    </button>
+                    <>
+                      <button
+                        className="sticker bg-red-300 text-black px-3 py-1 font-black"
+                        onClick={() => onDeleteArtworkForPrompt(prompt.id)}
+                      >
+                        Delete Image
+                      </button>
+                      <button
+                        className="sticker bg-violet-300 text-black px-3 py-1 font-black"
+                        onClick={() => onDownloadArtworkForPrompt(prompt)}
+                      >
+                        Download Image
+                      </button>
+                    </>
                   )}
-                {artwork && (
-                  <button
-                    className="sticker bg-violet-300 text-black px-3 py-1 font-black"
-                    onClick={() => onDownloadArtworkForPrompt(prompt)}
-                  >
-                    Download Image
-                  </button>
-                )}
                 </div>
               )}
 
@@ -1460,12 +1545,12 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-fuchsia-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Category Logo Card Creator</h2>
               <p className="text-white/90 mt-1">
-                Generates category back card + adult back card with category title and themed imagery.
+                Generates category back card + adult back card using fixed deck-back styling constraints.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
                 <label className="flex flex-col gap-1 font-bold">
-                  Theme
+                  Theme style profile
                   <select
                     className="sticker px-3 py-2 bg-black text-lime-300"
                     value={categoryLogoState.themeId}
@@ -1576,12 +1661,12 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-purple-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Theme Card Generater</h2>
               <p className="text-white/90 mt-1">
-                Front/back card designer with minimized prompt display and front-card text ban rules.
+                Front/back card designer with fixed deck-back outline constraints and no game-type dependency.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
                 <label className="flex flex-col gap-1 font-bold">
-                  Theme
+                  Theme style profile
                   <select
                     className="sticker px-3 py-2 bg-black text-lime-300"
                     value={themeCardState.themeId}
@@ -1590,20 +1675,6 @@ function App(): JSX.Element {
                     {themes.map((theme) => (
                       <option key={theme.id} value={theme.id}>
                         {theme.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 font-bold">
-                  Game type (asset naming)
-                  <select
-                    className="sticker px-3 py-2 bg-black text-lime-300"
-                    value={themeCardRoundTypeId}
-                    onChange={(event) => setThemeCardRoundTypeId(event.target.value)}
-                  >
-                    {roundTypes.map((roundType) => (
-                      <option key={roundType.id} value={roundType.id}>
-                        {roundType.name}
                       </option>
                     ))}
                   </select>
@@ -1620,8 +1691,8 @@ function App(): JSX.Element {
                       }))
                     }
                   >
-                    <option value="back">Back then Front</option>
-                    <option value="front">Front then Back</option>
+                  <option value="back">Back then Front</option>
+                  <option value="front">Front then Back</option>
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 font-bold">
@@ -1686,7 +1757,7 @@ function App(): JSX.Element {
                   checked={themeCardState.strictMode}
                   onChange={(event) => setThemeCardState((prev) => ({ ...prev, strictMode: event.target.checked }))}
                 />
-                Strict Mode (front cards enforce no rendered text)
+                Strict Mode (front cards enforce no rendered text + fixed card outline)
               </label>
 
               <div className="mt-4 neon-panel p-3 bg-black/40">
@@ -1744,24 +1815,10 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-indigo-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Game Type Logo Creator</h2>
               <p className="text-white/90 mt-1">
-                Generates game-type logo back card art and matching banner image for selected round type.
+                Generates game-type logo back card art and matching banner image with fixed deck-back styling constraints.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
-                <label className="flex flex-col gap-1 font-bold">
-                  Theme
-                  <select
-                    className="sticker px-3 py-2 bg-black text-lime-300"
-                    value={gameTypeLogoState.themeId}
-                    onChange={(event) => setGameTypeLogoState((prev) => ({ ...prev, themeId: event.target.value }))}
-                  >
-                    {themes.map((theme) => (
-                      <option key={theme.id} value={theme.id}>
-                        {theme.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="flex flex-col gap-1 font-bold">
                   Game type
                   <select
@@ -1853,7 +1910,7 @@ function App(): JSX.Element {
                     void exportSectionDlc(gameTypeLogoPrompts, {
                       packId: `${gameTypeLogoState.roundTypeId}-logos`,
                       packLabel: `${getRoundType(gameTypeLogoState.roundTypeId).name} Logos`,
-                      themeId: gameTypeLogoState.themeId,
+                      themeId: FIXED_DECK_THEME_ID,
                       roundTypeIdForLogo: gameTypeLogoState.roundTypeId
                     })
                   }
@@ -1870,7 +1927,7 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-rose-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Prompt Generator</h2>
               <p className="text-white/90 mt-1">
-                Creates rule-style prompt cards per game type with hints, liar variants, banned words, and 18+ mode.
+                Creates actual game-ready clue/question/opinion/in-game prompts per game type with hints, liar variants, banned words, and 18+ mode.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
