@@ -26,6 +26,7 @@ import { generateArtworkImage } from './utils/imageGenerator';
 import { Progress } from './components/ui/progress';
 
 const STANDARD_GAME_ASSET_SIZE = '800x1200' as const;
+const STANDARD_GAME_TYPE_LOGO_SIZE = '800x400' as const;
 const DEFAULT_THEME_COLOUR = '#7c3aed';
 
 type ToolSection =
@@ -40,6 +41,7 @@ type ArtworkAssetTarget =
   | 'card-design'
   | 'category-card'
   | 'game-type-logo'
+  | 'game-type-top-logo'
   | 'theme-presenter'
   | 'theme-icon-sheet'
   | 'theme-ui-banner';
@@ -65,6 +67,7 @@ interface CategoryLogoCreatorState {
 
 interface GameTypeLogoCreatorState {
   roundTypeId: string;
+  categoryName: string;
   styleIntensity: StyleIntensity;
   tone: PromptTone;
 }
@@ -109,6 +112,7 @@ const DEFAULT_CATEGORY_LOGO_STATE: CategoryLogoCreatorState = {
 
 const DEFAULT_GAME_TYPE_LOGO_STATE: GameTypeLogoCreatorState = {
   roundTypeId: DEFAULT_ROUND_TYPES[0].id,
+  categoryName: DEFAULT_ROUND_TYPES[0].name,
   styleIntensity: 'colourful',
   tone: 'party'
 };
@@ -269,12 +273,15 @@ function normalizeCategoryLogoState(raw: Partial<CategoryLogoCreatorState> | und
 }
 
 function normalizeGameTypeLogoState(raw: Partial<GameTypeLogoCreatorState> | undefined): GameTypeLogoCreatorState {
+  const legacyState = (raw || {}) as Partial<GameTypeLogoCreatorState> & { gameTypeNameOverride?: string };
+  const categoryName =
+    raw?.categoryName?.trim() || legacyState.gameTypeNameOverride?.trim() || DEFAULT_GAME_TYPE_LOGO_STATE.categoryName;
   return {
     roundTypeId:
       typeof raw?.roundTypeId === 'string' && ROUND_TYPE_ID_SET.has(raw.roundTypeId)
         ? raw.roundTypeId
         : DEFAULT_GAME_TYPE_LOGO_STATE.roundTypeId,
-    gameTypeNameOverride: raw?.gameTypeNameOverride?.trim() || '',
+    categoryName,
     styleIntensity:
       raw?.styleIntensity === 'clean' || raw?.styleIntensity === 'colourful' || raw?.styleIntensity === 'crazy'
         ? raw.styleIntensity
@@ -511,7 +518,7 @@ function mapRoundTypeToAssetKey(roundTypeId: string): string {
 function mapAssetTargetToArtworkKind(target: ArtworkAssetTarget): GeneratedArtwork['assetKind'] {
   if (target === 'card-design') return 'card';
   if (target === 'category-card') return 'category-card';
-  if (target === 'game-type-logo') return 'game-type-logo';
+  if (target === 'game-type-logo' || target === 'game-type-top-logo') return 'game-type-logo';
   return 'theme-default';
 }
 
@@ -538,6 +545,10 @@ function resolveArtworkAssetFilePath(params: {
 
   if (params.target === 'game-type-logo') {
     return `/assets/images/round-types/${mappedRoundTypeId}-logo.png`;
+  }
+
+  if (params.target === 'game-type-top-logo') {
+    return `/assets/images/round-types/${mappedRoundTypeId}-logo-top.png`;
   }
 
   if (params.target === 'theme-presenter') {
@@ -618,6 +629,19 @@ function buildGameTypeLogoCardBody(roundType: RoundType, tone: PromptTone): stri
     `Tone: ${tone}.`,
     `${buildSharedCardStyleConstraintBlock()} The card itself must be the final deliverable and can be reused for the UI banner slot.`,
     'Hard rules: one card only; isolated design; no scene backgrounds; no side-by-side layout.'
+  ].join('\n');
+}
+
+function buildGameTypeTopLogoBody(categoryName: string, roundType: RoundType, tone: PromptTone): string {
+  return [
+    `Create a SINGLE transparent-top logo strip for game type "${roundType.name}" with category "${categoryName}".`,
+    `Render size must be exactly ${STANDARD_GAME_TYPE_LOGO_SIZE} (2:1 horizontal).`,
+    'Background must be fully transparent (alpha), with no box panel and no solid backdrop.',
+    `Include the exact category name text: "${categoryName}".`,
+    'Typography should be stylised as a game-logo wordmark with bold readability.',
+    'Decorate with symbols/props strongly associated with the category and game type.',
+    `Tone: ${tone}.`,
+    'Hard rules: one logo composition only; no cards; no mockup scene; no borders; no watermark; preserve transparent edges.'
   ].join('\n');
 }
 
@@ -1044,6 +1068,7 @@ function App(): JSX.Element {
 
   function onGenerateGameTypeLogoPrompts(): void {
     const selectedRoundType = getRoundType(gameTypeLogoState.roundTypeId);
+    const categoryName = gameTypeLogoState.categoryName.trim() || selectedRoundType.name;
     const baseRenderState = buildBaseRenderState({
       themeId: FIXED_DECK_THEME_ID,
       styleIntensity: gameTypeLogoState.styleIntensity,
@@ -1085,8 +1110,29 @@ function App(): JSX.Element {
       }
     };
 
+    const topLogoRenderState: PromptGeneratorState = {
+      ...baseRenderState,
+      cardType: 'front',
+      resolution: STANDARD_GAME_TYPE_LOGO_SIZE
+    };
+    const topLogoPrompt: ArtworkPrompt = {
+      id: createPromptId(`round-top-logo-${selectedRoundType.id}`),
+      themeId: FIXED_DECK_THEME_ID,
+      variant: 'default',
+      side: 'front',
+      title: `${selectedRoundType.name} top logo strip`,
+      content: buildGameTypeTopLogoBody(categoryName, selectedRoundType, gameTypeLogoState.tone),
+      renderContext: {
+        tool: 'game-type-logo',
+        target: 'game-type-top-logo',
+        themeId: FIXED_DECK_THEME_ID,
+        roundTypeId: selectedRoundType.id,
+        renderState: topLogoRenderState
+      }
+    };
+
     removeArtworkForPromptSet(gameTypeLogoPrompts);
-    setGameTypeLogoPrompts([logoPrompt, sharedBannerPathPrompt]);
+    setGameTypeLogoPrompts([logoPrompt, sharedBannerPathPrompt, topLogoPrompt]);
     setImageGenerationError('');
   }
 
@@ -1793,7 +1839,7 @@ function App(): JSX.Element {
             <section className="neon-panel p-4 md:p-6 bg-indigo-900/65">
               <h2 className="text-xl md:text-2xl font-black text-lime-300">Game Type Logo Creator</h2>
               <p className="text-white/90 mt-1">
-                Generates game-type logo card art only (no category text), and saves the same output to both game-type logo and default banner paths.
+                Generates game-type logo card art, plus a transparent 800x400 top logo strip using your category text for prompt-card overlays.
               </p>
 
               <div className="grid gap-4 mt-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1815,6 +1861,20 @@ function App(): JSX.Element {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="flex flex-col gap-1 font-bold">
+                  Category name (top logo text)
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={gameTypeLogoState.categoryName}
+                    onChange={(event) =>
+                      setGameTypeLogoState((prev) => ({
+                        ...prev,
+                        categoryName: event.target.value
+                      }))
+                    }
+                    placeholder="e.g. Hot Takes"
+                  />
                 </label>
                 <label className="flex flex-col gap-1 font-bold">
                   Style intensity

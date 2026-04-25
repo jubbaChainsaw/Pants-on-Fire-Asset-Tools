@@ -209,7 +209,7 @@ function parseSupportedSizesFromMessage(message: string): string[] {
 }
 
 function chooseBestFallbackSize(supportedSizes: string[]): string | null {
-  const rankedPreferred = ['800x1200', '1024x1536', '1024x1024', '1536x1024', 'auto'];
+  const rankedPreferred = ['800x1200', '800x400', '1024x1536', '1024x1024', '1536x1024', 'auto'];
   for (const preferred of rankedPreferred) {
     if (supportedSizes.includes(preferred)) return preferred;
   }
