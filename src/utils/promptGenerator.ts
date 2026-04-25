@@ -69,11 +69,13 @@ function getFrontCardInstructions(theme: Theme): string {
     'Use a thin decorative border around the full card edge with target thickness of 0.3cm (about 3-4% of card width).',
     'Inside the border, keep one large open reading field for prompt text with no extra boxed panel.',
     'Fill the interior with a single colour or very subtle same-colour gradient from the theme palette.',
-    'Add only a FADED monochrome repeating motif texture in the background (for example revolver + cowboy hat pattern for western themes).',
+    'Add only a FADED monochrome repeating pattern made from key prop items associated with this exact theme.',
+    'Background pattern props must be concrete theme-linked objects (not generic shapes), such as signature tools, accessories, symbols, or iconic items tied to the theme.',
+    'Do not use unrelated motifs, generic clip-art icons, or references from other themes.',
     'Pattern texture must be low contrast, soft, and non-distracting so text stays highly readable.',
     'Do NOT place characters, mascots, logos, titles, badges, explosions, or dense icons on the front face.',
     'Keep decorative complexity minimal on front; reserve loud visuals for the back design.',
-    `Texture motifs should still reference: ${theme.motifs.join(', ')}.`
+    `Approved prop pool for this theme: ${theme.motifs.join(', ')}.`
   ].join(' ');
 }
 
