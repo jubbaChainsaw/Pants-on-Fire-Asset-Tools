@@ -6,14 +6,26 @@ import { AppExportBundle, BleedSize, GeneratedCardText, GeneratedPrompt, TextSty
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2l4m0AAAAASUVORK5CYII=';
 
-export function downloadTextFile(filename: string, content: string): void {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+function downloadBlobFile(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+
+  // Delay cleanup so the browser has time to consume the object URL.
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    anchor.remove();
+  }, 1500);
+}
+
+export function downloadTextFile(filename: string, content: string): void {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  downloadBlobFile(filename, blob);
 }
 
 export function downloadJsonFile(filename: string, data: unknown): void {
@@ -261,12 +273,7 @@ export async function exportPngCardsZip(
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `${deckName || 'pants-on-fire-deck'}-png-cards.zip`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadBlobFile(`${deckName || 'pants-on-fire-deck'}-png-cards.zip`, blob);
 }
 
 export async function exportDeckZip(
@@ -305,12 +312,7 @@ export async function exportDeckZip(
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `${deckName || 'pants-on-fire-deck'}.zip`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadBlobFile(`${deckName || 'pants-on-fire-deck'}.zip`, blob);
 }
 
 export async function exportDeckPdf(
@@ -649,10 +651,5 @@ export async function exportDlcTemplateZip(options: DlcTemplateExportOptions): P
   });
 
   const bundle = await zip.generateAsync({ type: 'blob' });
-  const url = URL.createObjectURL(bundle);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `${normalizedPackId}-dlc-import-template.zip`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadBlobFile(`${normalizedPackId}-dlc-import-template.zip`, bundle);
 }
