@@ -10,7 +10,7 @@ import {
   StyleIntensity,
   Theme
 } from './types';
-import { DEFAULT_THEMES } from './data/defaultThemes';
+import { DEFAULT_BASE_THEME, DEFAULT_THEMES } from './data/defaultThemes';
 import { DEFAULT_ROUND_TYPES, ROUND_TYPE_ID_SET } from './data/defaultRoundTypes';
 import { generateArtworkPrompts, getNegativePrompt } from './utils/promptGenerator';
 import { loadFromStorage, saveToStorage, trySaveToStorage } from './utils/storage';
@@ -146,7 +146,8 @@ const ADULT_LIAR_VARIANTS = [
   'Keep it spicy-but-safe: suggestive tone, zero explicit detail.'
 ];
 
-const FIXED_DECK_THEME_ID = 'default';
+const BASE_THEME_ID = 'default';
+const FIXED_DECK_THEME_ID = BASE_THEME_ID;
 
 const SHARED_DECK_BACK_STYLE_CONSTRAINTS = [
   `Render size must be exactly ${STANDARD_GAME_ASSET_SIZE} (portrait).`,
@@ -478,6 +479,11 @@ function normalizeThemes(rawThemes: Theme[]): Theme[] {
     })
     .filter((theme): theme is Theme => Boolean(theme));
 
+  const hasDefaultTheme = normalized.some((theme) => theme.id === DEFAULT_BASE_THEME.id);
+  if (!hasDefaultTheme) {
+    normalized.unshift(DEFAULT_BASE_THEME);
+  }
+
   const deduped: Theme[] = [];
   const usedIds = new Set<string>();
   for (const theme of normalized) {
@@ -490,7 +496,12 @@ function normalizeThemes(rawThemes: Theme[]): Theme[] {
     usedIds.add(nextId);
     deduped.push({ ...theme, id: nextId });
   }
-  return deduped.length > 0 ? deduped : DEFAULT_THEMES;
+  if (deduped.length === 0) return DEFAULT_THEMES;
+  const defaultThemeIndex = deduped.findIndex((theme) => theme.id === DEFAULT_BASE_THEME.id);
+  if (defaultThemeIndex <= 0) return deduped;
+  const [defaultTheme] = deduped.splice(defaultThemeIndex, 1);
+  deduped.unshift(defaultTheme);
+  return deduped;
 }
 
 function mapRoundTypeToAssetKey(roundTypeId: string): string {
@@ -548,6 +559,10 @@ function resolveArtworkAssetFilePath(params: {
 
   if (params.prompt.variant === 'adult') {
     return `/assets/themes/${normalizedThemeId}/cards/prompt-front-18.png`;
+  }
+
+  if (mappedRoundTypeId === 'prompt') {
+    return `/assets/themes/${normalizedThemeId}/cards/prompt-front.png`;
   }
 
   const allowedRoundTypes = new Set(['prompt', 'opinion', 'picture', 'grill', 'meme', 'noise', 'offtopic', 'chain']);
@@ -952,7 +967,8 @@ function App(): JSX.Element {
   }
 
   function deleteTheme(index: number): void {
-    if (themes.length <= 1) return;
+  const themeToDelete = themes[index];
+  if (!themeToDelete || themeToDelete.id === DEFAULT_BASE_THEME.id || themes.length <= 1) return;
     setThemes((prev) => normalizeThemes(prev.filter((_, idx) => idx !== index)));
   }
 
@@ -1504,12 +1520,18 @@ function App(): JSX.Element {
                         />
                       </label>
                     </div>
-                    <button
-                      className="mt-3 sticker bg-red-300 text-black px-4 py-2 font-black"
-                      onClick={() => deleteTheme(index)}
-                    >
-                      Delete Theme
-                    </button>
+                    {theme.id === DEFAULT_BASE_THEME.id ? (
+                      <div className="mt-3 text-xs font-black text-cyan-200">
+                        Built-in base theme. Use this for default front/back card creation.
+                      </div>
+                    ) : (
+                      <button
+                        className="mt-3 sticker bg-red-300 text-black px-4 py-2 font-black"
+                        onClick={() => deleteTheme(index)}
+                      >
+                        Delete Theme
+                      </button>
+                    )}
                   </article>
                 ))}
               </div>

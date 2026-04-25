@@ -1,6 +1,16 @@
 import { Theme } from '../types';
 
+export const DEFAULT_BASE_THEME: Theme = {
+  id: 'default',
+  name: 'Default',
+  palette: ['#09112b', '#00d7ff', '#ff00a8', '#ffe44d'],
+  motifs: ['brand spark swirls', 'neon flare ribbons', 'party confetti dots', 'comic burst accents'],
+  borderMotifs: ['double neon outline', 'rounded inset frame', 'brand glow corners'],
+  avoid: ['photorealism', 'off-brand muted palettes', 'low-contrast text areas']
+};
+
 export const DEFAULT_THEMES: Theme[] = [
+  DEFAULT_BASE_THEME,
   {
     id: 'pirates',
     name: 'Pirates',
