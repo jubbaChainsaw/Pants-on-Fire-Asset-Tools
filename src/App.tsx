@@ -72,6 +72,39 @@ const STORAGE_KEYS = {
 
 const STANDARD_GAME_ASSET_SIZE: PromptResolution = '800x1200';
 
+function resolveArtworkAssetFilePath(
+  themeId: string,
+  prompt: Pick<GeneratedPrompt, 'side' | 'variant'>,
+  roundTypeId: string
+): string {
+  const normalizedThemeId = themeId?.trim() || 'default';
+  if (prompt.side === 'back') {
+    const backName = prompt.variant === 'adult' ? 'prompt-back-18.png' : 'prompt-back.png';
+    return `/assets/themes/${normalizedThemeId}/cards/${backName}`;
+  }
+
+  if (prompt.variant === 'adult') {
+    return `/assets/themes/${normalizedThemeId}/cards/prompt-front-18.png`;
+  }
+
+  const mappedRoundTypeId = roundTypeId === 'sound' ? 'noise' : roundTypeId === 'video' ? 'meme' : roundTypeId;
+  const allowedRoundTypes = new Set([
+    'prompt',
+    'opinion',
+    'picture',
+    'grill',
+    'meme',
+    'noise',
+    'offtopic',
+    'chain'
+  ]);
+  const frontName = allowedRoundTypes.has(mappedRoundTypeId)
+    ? `prompt-front-${mappedRoundTypeId}.png`
+    : 'prompt-front.png';
+
+  return `/assets/themes/${normalizedThemeId}/cards/${frontName}`;
+}
+
 const DEFAULT_PROMPT_STATE: PromptGeneratorState = {
   themeId: DEFAULT_THEMES[0].id,
   cardType: 'back',
@@ -221,7 +254,14 @@ function normalizeGeneratedArtwork(raw: unknown): GeneratedArtwork[] {
 
   return raw.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return [];
-    const candidate = entry as Partial<GeneratedArtwork> & { title?: string; imageDataUrl?: string };
+    const candidate = entry as Partial<GeneratedArtwork> & {
+      title?: string;
+      imageDataUrl?: string;
+      outputPath?: string;
+      filePath?: string;
+      filename?: string;
+      assetPath?: string;
+    };
     const promptId = typeof candidate.promptId === 'string' ? candidate.promptId : '';
     const dataUrl =
       typeof candidate.dataUrl === 'string'
@@ -244,6 +284,16 @@ function normalizeGeneratedArtwork(raw: unknown): GeneratedArtwork[] {
         side: candidate.side === 'front' || candidate.side === 'back' ? candidate.side : 'front',
         variant: candidate.variant === 'adult' ? 'adult' : 'default',
         dataUrl,
+        assetPath:
+          typeof candidate.assetPath === 'string'
+            ? candidate.assetPath
+            : typeof candidate.filePath === 'string'
+              ? candidate.filePath
+              : typeof candidate.outputPath === 'string'
+                ? candidate.outputPath
+                : typeof candidate.filename === 'string'
+                  ? candidate.filename
+                  : '',
         createdAt:
           typeof candidate.createdAt === 'string'
             ? candidate.createdAt
@@ -394,7 +444,10 @@ function App(): JSX.Element {
 
   function onGeneratePrompts(): void {
     if (!currentTheme) return;
-    const prompts = generateArtworkPrompts(promptState, currentTheme);
+    const prompts = generateArtworkPrompts(promptState, currentTheme).map((prompt) => ({
+      ...prompt,
+      themeId: currentTheme.id
+    }));
     const promptIds = new Set(prompts.map((prompt) => prompt.id));
     setGeneratedPrompts(prompts);
     setGeneratedArtwork((prev) => prev.filter((artwork) => promptIds.has(artwork.promptId)));
@@ -410,8 +463,15 @@ function App(): JSX.Element {
     setGeneratingPromptIds((prev) => (prev.includes(prompt.id) ? prev : [...prev, prompt.id]));
 
     try {
-      const artwork = await generateArtworkImage(prompt, imageGeneratorConfig, promptState);
-      setGeneratedArtwork((prev) => [artwork, ...prev.filter((entry) => entry.promptId !== prompt.id)]);
+      const assetFilePath = resolveArtworkAssetFilePath(promptState.themeId, prompt, cardTextState.roundTypeId);
+      const artwork = await generateArtworkImage(prompt, imageGeneratorConfig, promptState, {
+        assetPath: assetFilePath
+      });
+      const artworkWithPath: GeneratedArtwork = {
+        ...artwork,
+        assetPath: assetFilePath
+      };
+      setGeneratedArtwork((prev) => [artworkWithPath, ...prev.filter((entry) => entry.promptId !== prompt.id)]);
     } catch (error) {
       setImageGenerationError(`Failed for "${prompt.title}": ${getImageGenerationErrorMessage(error)}`);
     } finally {
@@ -475,8 +535,12 @@ function App(): JSX.Element {
   function onDownloadArtwork(prompt: GeneratedPrompt): void {
     const artwork = artworkByPromptId.get(prompt.id);
     if (!artwork) return;
-    const safeName = prompt.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    downloadDataUrlFile(`${safeName || 'rendered-art'}.png`, artwork.dataUrl);
+    const pathFromArtwork =
+      artwork.assetPath?.trim() || resolveArtworkAssetFilePath(promptState.themeId, prompt, cardTextState.roundTypeId);
+    const normalizedPath = pathFromArtwork.replace(/^\/+/, '');
+    const filename = normalizedPath.split('/').pop() || 'rendered-art.png';
+    downloadDataUrlFile(filename, artwork.dataUrl);
+    setCopiedMessage(`Saved as ${normalizedPath}`);
   }
 
   function onGenerateCardTexts(): void {
