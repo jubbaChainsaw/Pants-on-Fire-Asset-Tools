@@ -3,6 +3,9 @@ import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import { AppExportBundle, BleedSize, GeneratedCardText, GeneratedPrompt, TextStyle } from '../types';
 
+const TRANSPARENT_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2l4m0AAAAASUVORK5CYII=';
+
 export function downloadTextFile(filename: string, content: string): void {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -437,4 +440,219 @@ export function copyToClipboard(content: string): Promise<void> {
 
 export function createAppExportBundle(bundle: AppExportBundle): AppExportBundle {
   return bundle;
+}
+
+export interface RulePromptCardExport {
+  id: string;
+  roundTypeId: string;
+  roundTypeName: string;
+  category: string;
+  version: 'default' | 'adult';
+  hint: string;
+  mainPrompt: string;
+  liarPrompt: string;
+  liarVariant: string;
+  bannedWords: string[];
+}
+
+export interface DlcTemplateExportOptions {
+  packId: string;
+  packLabel: string;
+  themeId: string;
+  generatedArtwork: Array<{ assetPath?: string; dataUrl: string }>;
+  rulePromptCards: RulePromptCardExport[];
+  roundTypeIdForLogo?: string;
+}
+
+function toSlug(value: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'custom-pack';
+}
+
+function toPascalCase(value: string): string {
+  return toSlug(value)
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [, mime = 'image/png', payload = ''] = dataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
+  if (!payload) {
+    throw new Error('Invalid data URL payload.');
+  }
+  const binary = window.atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function placeholderPngBlob(): Blob {
+  const binary = window.atob(TRANSPARENT_PNG_BASE64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: 'image/png' });
+}
+
+function buildPromptRoundDataModule(packId: string, packLabel: string, cards: RulePromptCardExport[]): string {
+  const exportName = `${toPascalCase(packId)}PromptRoundData`;
+  const promptRows = cards.map((card) => ({
+    hint: `${card.roundTypeName}: ${card.hint}`,
+    main: card.mainPrompt,
+    imposter: card.liarPrompt,
+    ...(card.version === 'adult' ? { adultOnly: true } : {})
+  }));
+  return [
+    `export const ${exportName} = {`,
+    `  id: '${toSlug(packId)}',`,
+    `  name: '${packLabel.replace(/'/g, "\\'")}',`,
+    "  emoji: '🔥',",
+    '  prompts: [',
+    ...promptRows.map((row) => `    ${JSON.stringify(row)},`),
+    '  ],',
+    '};',
+    ''
+  ].join('\n');
+}
+
+function buildPictureManifest(packId: string, cards: RulePromptCardExport[]): Record<string, unknown> {
+  const normalizedPackId = toSlug(packId);
+  const entries = cards.map((card, index) => {
+    const base = `${card.roundTypeId}-${String(index + 1).padStart(3, '0')}`;
+    return {
+      entryId: `${normalizedPackId}-${base}`,
+      groupId: card.roundTypeId,
+      groupName: card.roundTypeName,
+      hint: card.hint,
+      main: card.mainPrompt,
+      imposter: card.liarPrompt,
+      mainMediaFile: `${base}-main.png`,
+      imposterMediaFile: `${base}-imposter.png`,
+      previewLabel: card.category,
+      adultOnly: card.version === 'adult'
+    };
+  });
+  return {
+    id: `${normalizedPackId}-v1`,
+    version: 1,
+    label: `${normalizedPackId.toUpperCase()} Picture Pack`,
+    category: 'picture',
+    releaseChannel: 'dlc',
+    enabled: true,
+    basePath: `/assets/graphic-packs/picture/${normalizedPackId}-v1/images`,
+    entries
+  };
+}
+
+export function rulePromptCardsToText(cards: RulePromptCardExport[]): string {
+  return cards
+    .map((card, index) => {
+      const prefix = `[${index + 1}] ${card.roundTypeName} (${card.version === 'adult' ? '18+' : 'default'})`;
+      return [
+        prefix,
+        `Category: ${card.category}`,
+        `Hint: ${card.hint}`,
+        `Main: ${card.mainPrompt}`,
+        `Liar: ${card.liarPrompt}`,
+        `Liar variant: ${card.liarVariant}`,
+        `Banned words: ${card.bannedWords.join(', ')}`
+      ].join('\n');
+    })
+    .join('\n\n');
+}
+
+export async function exportDlcTemplateZip(options: DlcTemplateExportOptions): Promise<void> {
+  const zip = new JSZip();
+  const root = 'dlc-import-template';
+  const normalizedPackId = toSlug(options.packId);
+  const normalizedThemeId = toSlug(options.themeId || 'default');
+  const artworkByPath = new Map<string, Blob>();
+
+  options.generatedArtwork.forEach((artwork) => {
+    const candidatePath = artwork.assetPath?.trim();
+    if (!candidatePath || !artwork.dataUrl) return;
+    try {
+      const normalized = candidatePath.replace(/^\/+/, '');
+      artworkByPath.set(normalized, dataUrlToBlob(artwork.dataUrl));
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+  const fallbackPng = placeholderPngBlob();
+  const writeImage = (relativePath: string): void => {
+    zip.file(`${root}/public/${relativePath}`, artworkByPath.get(relativePath) || fallbackPng);
+  };
+
+  // Prompt pack JS payload compatible with template shape.
+  const promptCards = options.rulePromptCards.length
+    ? options.rulePromptCards
+    : [
+        {
+          id: `${normalizedPackId}-placeholder`,
+          roundTypeId: 'prompt',
+          roundTypeName: 'Hot Seat',
+          category: options.packLabel,
+          version: 'default' as const,
+          hint: `${options.packLabel} sample`,
+          mainPrompt: `${options.packLabel} main`,
+          liarPrompt: `${options.packLabel} liar`,
+          liarVariant: `${options.packLabel} liar variant`,
+          bannedWords: []
+        }
+      ];
+
+  const promptRoundDataPath = `${root}/src/data/packs/${normalizedPackId}/promptRoundData.js`;
+  zip.file(promptRoundDataPath, buildPromptRoundDataModule(normalizedPackId, options.packLabel, promptCards));
+
+  // Picture pack scaffold from template docs.
+  const picturePackBase = `${root}/public/assets/graphic-packs/picture/${normalizedPackId}-v1`;
+  zip.file(`${picturePackBase}/manifest.json`, JSON.stringify(buildPictureManifest(normalizedPackId, promptCards), null, 2));
+  zip.file(
+    `${picturePackBase}/images/README.md`,
+    'Generated by Pants on Fire! Asset Tools.\nReplace placeholder images with final generated artwork if needed.\n'
+  );
+  promptCards.forEach((card, index) => {
+    const base = `${card.roundTypeId}-${String(index + 1).padStart(3, '0')}`;
+    zip.file(`${picturePackBase}/images/${base}-main.png`, fallbackPng);
+    zip.file(`${picturePackBase}/images/${base}-imposter.png`, fallbackPng);
+  });
+
+  // Theme assets expected by template.
+  const themeBase = `assets/themes/${normalizedThemeId}`;
+  [
+    `${themeBase}/cards/prompt-front.png`,
+    `${themeBase}/cards/prompt-back.png`,
+    `${themeBase}/cards/prompt-front-18.png`,
+    `${themeBase}/cards/prompt-back-18.png`,
+    `${themeBase}/icons/icons-sheet.png`,
+    `${themeBase}/ui/banner.png`,
+    `${themeBase}/characters/presenter.png`
+  ].forEach(writeImage);
+
+  // Optional round type logo.
+  if (options.roundTypeIdForLogo) {
+    writeImage(`assets/images/round-types/${toSlug(options.roundTypeIdForLogo)}-logo.png`);
+  }
+
+  // Include every generated asset path under public/ so exports map to expected structure.
+  artworkByPath.forEach((blob, relativePath) => {
+    zip.file(`${root}/public/${relativePath}`, blob);
+  });
+
+  const bundle = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(bundle);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${normalizedPackId}-dlc-import-template.zip`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
