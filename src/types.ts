@@ -2,7 +2,7 @@ export type VersionMode = 'default' | 'adult' | 'both';
 export type CardType = 'back' | 'front';
 export type StyleIntensity = 'clean' | 'colourful' | 'crazy';
 export type PromptTone = 'fun' | 'dark' | 'silly' | 'premium' | 'party' | 'chaotic';
-export type PromptResolution = '1024x1536';
+export type PromptResolution = '800x1200';
 
 export interface Theme {
   id: string;
