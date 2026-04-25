@@ -105,7 +105,8 @@ function buildPromptBody(
 
   if (side === 'front') {
     segments.push(
-      'Front-card hard layout rule: center prompt-safe panel must dominate the composition and remain unobstructed for readable text.'
+      'Front-card hard layout rule: center prompt-safe panel must dominate the composition and remain unobstructed for readable text.',
+      'Front-card text ban: do not render words, letters, numbers, logos, or typography on the front artwork itself.'
     );
   }
 
