@@ -70,7 +70,7 @@ const STORAGE_KEYS = {
   deckState: 'pof_deck_state_v1'
 };
 
-const STANDARD_GAME_ASSET_SIZE: PromptResolution = '1024x1536';
+const STANDARD_GAME_ASSET_SIZE: PromptResolution = '800x1200';
 
 const DEFAULT_PROMPT_STATE: PromptGeneratorState = {
   themeId: DEFAULT_THEMES[0].id,
