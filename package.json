@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "src/main.tsx",
+  "main": "index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,7 +11,9 @@
     "expo:start": "expo start",
     "expo:android": "expo run:android",
     "expo:ios": "expo run:ios",
-    "expo:web": "expo start --web"
+    "expo:web": "expo start --web",
+    "eas:build:apk": "eas build -p android --profile preview",
+    "eas:build:aab": "eas build -p android --profile production"
   },
   "dependencies": {
     "expo": "^55.0.17",
@@ -20,15 +22,16 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.453.0",
     "papaparse": "^5.5.3",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "react-native": "^0.85.2",
-    "react-native-webview": "^13.16.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-native": "0.83.6",
+    "react-native-webview": "13.16.0",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "babel-preset-expo": "~55.0.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "vite": "^5.4.8"
