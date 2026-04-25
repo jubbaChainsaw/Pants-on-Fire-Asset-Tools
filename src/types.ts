@@ -62,6 +62,7 @@ export interface GeneratedArtwork {
   promptId: string;
   promptTitle: string;
   assetPath?: string;
+  assetKind?: 'card' | 'category-card' | 'game-type-logo' | 'theme-default';
   side: CardType;
   variant: 'default' | 'adult';
   dataUrl: string;

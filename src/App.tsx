@@ -64,6 +64,7 @@ const STORAGE_KEYS = {
   generatedPrompts: 'pof_generated_prompts_v1',
   imageGeneratorConfig: 'pof_image_generator_config_v1',
   generatedArtwork: 'pof_generated_artwork_v1',
+  artworkAssetTarget: 'pof_artwork_asset_target_v1',
   artworkGridTemplate: 'pof_artwork_grid_template_v1',
   cardTextState: 'pof_card_text_state_v1',
   generatedCardTexts: 'pof_generated_card_texts_v1',
@@ -71,13 +72,66 @@ const STORAGE_KEYS = {
 };
 
 const STANDARD_GAME_ASSET_SIZE: PromptResolution = '800x1200';
+const DEFAULT_THEME_COLOUR = '#7c3aed';
+
+type ArtworkAssetTarget =
+  | 'card-design'
+  | 'category-card'
+  | 'game-type-logo'
+  | 'theme-presenter'
+  | 'theme-icon-sheet'
+  | 'theme-ui-banner';
+
+function mapAssetTargetToArtworkKind(target: ArtworkAssetTarget): GeneratedArtwork['assetKind'] {
+  if (target === 'card-design') return 'card';
+  if (target === 'category-card') return 'category-card';
+  if (target === 'game-type-logo') return 'game-type-logo';
+  return 'theme-default';
+}
+
+function normalizeArtworkAssetTarget(raw: unknown): ArtworkAssetTarget {
+  const allowed: ArtworkAssetTarget[] = [
+    'card-design',
+    'category-card',
+    'game-type-logo',
+    'theme-presenter',
+    'theme-icon-sheet',
+    'theme-ui-banner'
+  ];
+  if (typeof raw === 'string' && allowed.includes(raw as ArtworkAssetTarget)) {
+    return raw as ArtworkAssetTarget;
+  }
+  return 'card-design';
+}
+
+function mapRoundTypeToAssetKey(roundTypeId: string): string {
+  return roundTypeId === 'sound' ? 'noise' : roundTypeId === 'video' ? 'meme' : roundTypeId;
+}
 
 function resolveArtworkAssetFilePath(
   themeId: string,
   prompt: Pick<GeneratedPrompt, 'side' | 'variant'>,
-  roundTypeId: string
+  roundTypeId: string,
+  target: ArtworkAssetTarget
 ): string {
   const normalizedThemeId = themeId?.trim() || 'default';
+  const mappedRoundTypeId = mapRoundTypeToAssetKey(roundTypeId);
+  if (target === 'category-card') {
+    return `/assets/themes/${normalizedThemeId}/cards/prompt-front-${mappedRoundTypeId}.png`;
+  }
+  if (target === 'game-type-logo') {
+    return `/assets/themes/${normalizedThemeId}/logos/${mappedRoundTypeId}-logo.png`;
+  }
+  if (target === 'theme-presenter') {
+    return `/assets/themes/${normalizedThemeId}/characters/presenter.png`;
+  }
+  if (target === 'theme-icon-sheet') {
+    return `/assets/themes/${normalizedThemeId}/icons/icons-sheet.png`;
+  }
+  if (target === 'theme-ui-banner') {
+    return `/assets/themes/${normalizedThemeId}/ui/banner.png`;
+  }
+
   if (prompt.side === 'back') {
     const backName = prompt.variant === 'adult' ? 'prompt-back-18.png' : 'prompt-back.png';
     return `/assets/themes/${normalizedThemeId}/cards/${backName}`;
@@ -87,7 +141,6 @@ function resolveArtworkAssetFilePath(
     return `/assets/themes/${normalizedThemeId}/cards/prompt-front-18.png`;
   }
 
-  const mappedRoundTypeId = roundTypeId === 'sound' ? 'noise' : roundTypeId === 'video' ? 'meme' : roundTypeId;
   const allowedRoundTypes = new Set([
     'prompt',
     'opinion',
@@ -103,6 +156,118 @@ function resolveArtworkAssetFilePath(
     : 'prompt-front.png';
 
   return `/assets/themes/${normalizedThemeId}/cards/${frontName}`;
+}
+
+function slugifyThemeId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const cleaned = hex.trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) return null;
+  const r = Number.parseInt(cleaned.slice(0, 2), 16);
+  const g = Number.parseInt(cleaned.slice(2, 4), 16);
+  const b = Number.parseInt(cleaned.slice(4, 6), 16);
+  return { r, g, b };
+}
+
+function rgbToHex(value: { r: number; g: number; b: number }): string {
+  const clamp = (channel: number) => Math.max(0, Math.min(255, Math.round(channel)));
+  return `#${[clamp(value.r), clamp(value.g), clamp(value.b)]
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+function shiftHexColour(hex: string, amount: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const apply = (channel: number) =>
+    amount >= 0 ? channel + (255 - channel) * amount : channel * (1 + amount);
+  return rgbToHex({
+    r: apply(rgb.r),
+    g: apply(rgb.g),
+    b: apply(rgb.b)
+  });
+}
+
+function normalizeThemes(rawThemes: Theme[]): Theme[] {
+  const normalized = rawThemes
+    .map((theme) => {
+      const name = theme.name?.trim();
+      if (!name || name.toLowerCase() === 'new theme') return null;
+      const idBase = slugifyThemeId(theme.id?.trim() || name);
+      if (!idBase) return null;
+      const palette = Array.isArray(theme.palette)
+        ? theme.palette.map((value) => value.trim()).filter(Boolean)
+        : [];
+      const primary = palette[0] || DEFAULT_THEME_COLOUR;
+      return {
+        id: idBase,
+        name,
+        palette: palette.length > 0 ? palette : [primary, shiftHexColour(primary, 0.25), shiftHexColour(primary, -0.35)],
+        motifs:
+          Array.isArray(theme.motifs) && theme.motifs.length > 0
+            ? theme.motifs.map((value) => value.trim()).filter(Boolean)
+            : ['icon pattern', 'shape accents'],
+        borderMotifs:
+          Array.isArray(theme.borderMotifs) && theme.borderMotifs.length > 0
+            ? theme.borderMotifs.map((value) => value.trim()).filter(Boolean)
+            : ['line accents'],
+        avoid:
+          Array.isArray(theme.avoid) && theme.avoid.length > 0
+            ? theme.avoid.map((value) => value.trim()).filter(Boolean)
+            : ['low readability']
+      } as Theme;
+    })
+    .filter((theme): theme is Theme => Boolean(theme));
+
+  const deduped: Theme[] = [];
+  const usedIds = new Set<string>();
+  for (const theme of normalized) {
+    let nextId = theme.id;
+    let suffix = 2;
+    while (usedIds.has(nextId)) {
+      nextId = `${theme.id}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(nextId);
+    deduped.push({ ...theme, id: nextId });
+  }
+
+  return deduped.length > 0 ? deduped : DEFAULT_THEMES;
+}
+
+function createThemeFromNameAndColour(
+  existingThemes: Theme[],
+  rawName: string,
+  rawColour: string
+): Theme | null {
+  const name = rawName.trim();
+  if (!name) return null;
+  const baseId = slugifyThemeId(name);
+  if (!baseId) return null;
+  const accent = hexToRgb(rawColour)
+    ? rgbToHex(hexToRgb(rawColour) as { r: number; g: number; b: number })
+    : DEFAULT_THEME_COLOUR;
+  const existingIds = new Set(existingThemes.map((theme) => theme.id));
+  let nextId = baseId;
+  let suffix = 2;
+  while (existingIds.has(nextId)) {
+    nextId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  return {
+    id: nextId,
+    name,
+    palette: [accent, shiftHexColour(accent, 0.25), shiftHexColour(accent, -0.35)],
+    motifs: ['theme icons', 'pattern accents'],
+    borderMotifs: ['line accents', 'corner marks'],
+    avoid: ['low readability']
+  };
 }
 
 const DEFAULT_PROMPT_STATE: PromptGeneratorState = {
@@ -338,7 +503,9 @@ function App(): JSX.Element {
       | 'round-type-editor'
       | 'import-export'
   );
-  const [themes, setThemes] = useState<Theme[]>(loadFromStorage(STORAGE_KEYS.themes, DEFAULT_THEMES));
+  const [themes, setThemes] = useState<Theme[]>(
+    normalizeThemes(loadFromStorage(STORAGE_KEYS.themes, DEFAULT_THEMES))
+  );
   const [roundTypes, setRoundTypes] = useState<RoundType[]>(
     normalizeRoundTypes(loadFromStorage(STORAGE_KEYS.roundTypes, DEFAULT_ROUND_TYPES))
   );
@@ -363,6 +530,12 @@ function App(): JSX.Element {
   const [generatedArtwork, setGeneratedArtwork] = useState<GeneratedArtwork[]>(
     normalizeGeneratedArtwork(loadFromStorage(STORAGE_KEYS.generatedArtwork, []))
   );
+  const [artworkAssetTarget, setArtworkAssetTarget] = useState<ArtworkAssetTarget>(
+    normalizeArtworkAssetTarget(loadFromStorage(STORAGE_KEYS.artworkAssetTarget, 'card-design'))
+  );
+  const [themeNameDraft, setThemeNameDraft] = useState('');
+  const [themeAccentColor, setThemeAccentColor] = useState(DEFAULT_THEME_COLOUR);
+  const [themeCreateError, setThemeCreateError] = useState('');
   const [showArtworkGridTemplate, setShowArtworkGridTemplate] = useState<boolean>(
     loadFromStorage(STORAGE_KEYS.artworkGridTemplate, true)
   );
@@ -392,11 +565,12 @@ function App(): JSX.Element {
     [generatedArtwork]
   );
 
-  useEffect(() => saveToStorage(STORAGE_KEYS.themes, themes), [themes]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.themes, normalizeThemes(themes)), [themes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.roundTypes, normalizeRoundTypes(roundTypes)), [roundTypes]);
   useEffect(() => saveToStorage(STORAGE_KEYS.promptState, normalizePromptState(promptState)), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.imageGeneratorConfig, imageGeneratorConfig), [imageGeneratorConfig]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.artworkAssetTarget, artworkAssetTarget), [artworkAssetTarget]);
   useEffect(() => saveToStorage(STORAGE_KEYS.artworkGridTemplate, showArtworkGridTemplate), [showArtworkGridTemplate]);
   useEffect(() => {
     const result = persistGeneratedArtworkForStorage(generatedArtwork);
@@ -463,13 +637,19 @@ function App(): JSX.Element {
     setGeneratingPromptIds((prev) => (prev.includes(prompt.id) ? prev : [...prev, prompt.id]));
 
     try {
-      const assetFilePath = resolveArtworkAssetFilePath(promptState.themeId, prompt, cardTextState.roundTypeId);
+      const assetFilePath = resolveArtworkAssetFilePath(
+        promptState.themeId,
+        prompt,
+        cardTextState.roundTypeId,
+        artworkAssetTarget
+      );
       const artwork = await generateArtworkImage(prompt, imageGeneratorConfig, promptState, {
         assetPath: assetFilePath
       });
       const artworkWithPath: GeneratedArtwork = {
         ...artwork,
-        assetPath: assetFilePath
+        assetPath: assetFilePath,
+        assetKind: mapAssetTargetToArtworkKind(artworkAssetTarget)
       };
       setGeneratedArtwork((prev) => [artworkWithPath, ...prev.filter((entry) => entry.promptId !== prompt.id)]);
     } catch (error) {
@@ -536,7 +716,8 @@ function App(): JSX.Element {
     const artwork = artworkByPromptId.get(prompt.id);
     if (!artwork) return;
     const pathFromArtwork =
-      artwork.assetPath?.trim() || resolveArtworkAssetFilePath(promptState.themeId, prompt, cardTextState.roundTypeId);
+      artwork.assetPath?.trim() ||
+      resolveArtworkAssetFilePath(promptState.themeId, prompt, cardTextState.roundTypeId, artworkAssetTarget);
     const normalizedPath = pathFromArtwork.replace(/^\/+/, '');
     const filename = normalizedPath.split('/').pop() || 'rendered-art.png';
     downloadDataUrlFile(filename, artwork.dataUrl);
@@ -656,26 +837,56 @@ function App(): JSX.Element {
   }
 
   function updateTheme(index: number, value: Partial<Theme>): void {
-    setThemes((prev) => prev.map((theme, idx) => (idx === index ? { ...theme, ...value } : theme)));
+    setThemes((prev) => {
+      const updated = prev.map((theme, idx) => (idx === index ? { ...theme, ...value } : theme));
+      return normalizeThemes(updated);
+    });
   }
 
-  function addTheme(): void {
-    setThemes((prev) => [
-      ...prev,
-      {
-        id: `theme-${Date.now()}`,
-        name: 'New Theme',
-        palette: ['#ff00ff', '#00ffaa', '#111111'],
-        motifs: ['motif one', 'motif two'],
-        borderMotifs: ['border motif one'],
-        avoid: ['undesired element']
-      }
-    ]);
+  function createTheme(): void {
+    const name = themeNameDraft.trim();
+    if (!name) {
+      setThemeCreateError('Enter a theme name.');
+      return;
+    }
+
+    const accent = hexToRgb(themeAccentColor)
+      ? rgbToHex(hexToRgb(themeAccentColor) as { r: number; g: number; b: number })
+      : DEFAULT_THEME_COLOUR;
+    const baseId = slugifyThemeId(name);
+    if (!baseId) {
+      setThemeCreateError('Theme name must include letters or numbers.');
+      return;
+    }
+
+    const existingIds = new Set(themes.map((theme) => theme.id));
+    let nextId = baseId;
+    let suffix = 2;
+    while (existingIds.has(nextId)) {
+      nextId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    const createdTheme: Theme = {
+      id: nextId,
+      name,
+      palette: [accent, shiftHexColour(accent, 0.25), shiftHexColour(accent, -0.35)],
+      motifs: ['theme icons', 'pattern accents'],
+      borderMotifs: ['line accents', 'corner marks'],
+      avoid: ['low readability']
+    };
+
+    setThemes((prev) => normalizeThemes([...prev, createdTheme]));
+    setPromptState((prev) => ({ ...prev, themeId: createdTheme.id }));
+    setCardTextState((prev) => ({ ...prev, themeId: createdTheme.id }));
+    setDeckState((prev) => ({ ...prev, themeId: createdTheme.id }));
+    setThemeNameDraft('');
+    setThemeCreateError('');
   }
 
   function deleteTheme(index: number): void {
     if (themes.length <= 1) return;
-    setThemes((prev) => prev.filter((_, idx) => idx !== index));
+    setThemes((prev) => normalizeThemes(prev.filter((_, idx) => idx !== index)));
   }
 
   function updateRoundType(index: number, value: Partial<RoundType>): void {
@@ -702,7 +913,7 @@ function App(): JSX.Element {
   async function importAllState(file: File | null): Promise<void> {
     if (!file) return;
     const parsed = JSON.parse(await readTextFile(file)) as Partial<AppExportBundle>;
-    if (parsed.themes?.length) setThemes(parsed.themes);
+    if (parsed.themes?.length) setThemes(normalizeThemes(parsed.themes));
     if (parsed.roundTypes?.length) {
       const filtered = parsed.roundTypes.filter((roundType) => ROUND_TYPE_ID_SET.has(roundType.id));
       if (filtered.length > 0) setRoundTypes(normalizeRoundTypes(filtered as RoundType[]));
@@ -1027,6 +1238,26 @@ function App(): JSX.Element {
                     placeholder="Paste API key"
                   />
                 </label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 font-bold text-sm">
+                  Asset target
+                  <select
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={artworkAssetTarget}
+                    onChange={(event) => setArtworkAssetTarget(normalizeArtworkAssetTarget(event.target.value))}
+                  >
+                    <option value="card-design">Card design (front/back)</option>
+                    <option value="category-card">Category card front</option>
+                    <option value="game-type-logo">Game type logo</option>
+                    <option value="theme-presenter">Theme presenter character</option>
+                    <option value="theme-icon-sheet">Theme icon sheet</option>
+                    <option value="theme-ui-banner">Theme UI banner</option>
+                  </select>
+                </label>
+                <div className="sticker bg-black/55 text-white px-3 py-2 text-xs font-semibold flex items-center">
+                  Generated files now follow canonical asset paths for the selected target.
+                </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-3">
@@ -1536,11 +1767,40 @@ function App(): JSX.Element {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl md:text-2xl font-black text-lime-300">2. Theme Editor</h2>
-                <p className="text-white/90 mt-1">Add, edit, delete themes saved to localStorage.</p>
+                <p className="text-white/90 mt-1">Create themes by name and colour, then edit detailed settings.</p>
               </div>
-              <button className="sticker bg-lime-300 text-black px-4 py-2 font-black" onClick={addTheme}>
-                Add Theme
-              </button>
+            </div>
+            <div className="mt-4 neon-panel p-3 bg-black/45">
+              <h3 className="font-black text-orange-300">Create Theme</h3>
+              <div className="mt-2 grid gap-3 md:grid-cols-3">
+                <label className="flex flex-col gap-1 font-bold md:col-span-2">
+                  Theme name
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300"
+                    value={themeNameDraft}
+                    onChange={(event) => {
+                      setThemeNameDraft(event.target.value);
+                      if (themeCreateError) setThemeCreateError('');
+                    }}
+                    placeholder="Enter theme name"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 font-bold">
+                  Theme colour
+                  <input
+                    className="sticker px-3 py-2 bg-black text-lime-300 h-11"
+                    type="color"
+                    value={themeAccentColor}
+                    onChange={(event) => setThemeAccentColor(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 items-center">
+                <button className="sticker bg-lime-300 text-black px-4 py-2 font-black" onClick={createTheme}>
+                  Create Theme
+                </button>
+                {themeCreateError && <span className="text-red-200 font-bold text-sm">{themeCreateError}</span>}
+              </div>
             </div>
             <div className="mt-4 space-y-3">
               {themes.map((theme, index) => (
