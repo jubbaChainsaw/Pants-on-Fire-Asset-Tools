@@ -47,6 +47,7 @@ type ArtworkAssetTarget =
   | 'theme-ui-banner';
 
 type ArtworkToolContext = 'theme-card' | 'category-logo' | 'game-type-logo';
+type ArtworkExportScope = 'theme-card' | 'category-logo' | 'game-type-logo';
 
 interface ArtworkPrompt extends GeneratedPrompt {
   renderContext: {
@@ -581,6 +582,43 @@ function resolveArtworkAssetFilePath(params: {
   return `/assets/themes/${normalizedThemeId}/cards/${frontName}`;
 }
 
+function normalizeAssetPath(assetPath: string | undefined): string {
+  return (assetPath || '').trim().replace(/^\/+/, '');
+}
+
+function filterGeneratedArtworkByScope(
+  artworkItems: GeneratedArtwork[],
+  scope: ArtworkExportScope,
+  themeId: string,
+  roundTypeId?: string
+): GeneratedArtwork[] {
+  const normalizedThemeId = (themeId || 'default').trim();
+  const mappedRoundTypeId = mapRoundTypeToAssetKey((roundTypeId || 'prompt').trim());
+
+  return artworkItems.filter((artwork) => {
+    const path = normalizeAssetPath(artwork.assetPath);
+    if (!path) return false;
+
+    if (scope === 'theme-card') {
+      return path.startsWith(`assets/themes/${normalizedThemeId}/cards/prompt-`);
+    }
+
+    if (scope === 'category-logo') {
+      return path.startsWith(`assets/themes/${normalizedThemeId}/cards/category`);
+    }
+
+    if (scope === 'game-type-logo') {
+      return (
+        path === `assets/images/round-types/${mappedRoundTypeId}-logo.png` ||
+        path === `assets/images/round-types/${mappedRoundTypeId}-logo-top.png` ||
+        path === `assets/themes/${normalizedThemeId}/ui/banner.png`
+      );
+    }
+
+    return false;
+  });
+}
+
 function buildBaseRenderState(params: {
   themeId: string;
   styleIntensity: StyleIntensity;
@@ -814,10 +852,45 @@ function sleep(ms: number): Promise<void> {
 }
 
 function downloadDataUrlFile(filename: string, dataUrl: string): void {
-  const anchor = document.createElement('a');
-  anchor.href = dataUrl;
-  anchor.download = filename;
-  anchor.click();
+  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) {
+    window.open(dataUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  try {
+    const mime = match[1] || 'application/octet-stream';
+    const payload = match[2] || '';
+    const binary = window.atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      anchor.remove();
+    }, 1500);
+  } catch {
+    window.open(dataUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+function inferArtworkSection(artwork: GeneratedArtwork): ArtworkToolContext | null {
+  const path = (artwork.assetPath || '').toLowerCase();
+  if (path.includes('/assets/themes/default/cards/category')) return 'category-logo';
+  if (path.includes('/assets/images/round-types/')) return 'game-type-logo';
+  if (path.includes('/assets/themes/default/ui/banner.png')) return 'game-type-logo';
+  if (path.includes('/assets/themes/')) return 'theme-card';
+  return null;
 }
 
 function App(): JSX.Element {
@@ -886,6 +959,25 @@ function App(): JSX.Element {
     });
     return grouped;
   }, [rulePromptCards]);
+
+  const themeCardSectionArtwork = useMemo(
+    () => filterGeneratedArtworkByScope(generatedArtwork, 'theme-card', themeCardState.themeId),
+    [generatedArtwork, themeCardState.themeId]
+  );
+  const categorySectionArtwork = useMemo(
+    () => filterGeneratedArtworkByScope(generatedArtwork, 'category-logo', FIXED_DECK_THEME_ID),
+    [generatedArtwork]
+  );
+  const gameTypeSectionArtwork = useMemo(
+    () =>
+      filterGeneratedArtworkByScope(
+        generatedArtwork,
+        'game-type-logo',
+        FIXED_DECK_THEME_ID,
+        gameTypeLogoState.roundTypeId
+      ),
+    [generatedArtwork, gameTypeLogoState.roundTypeId]
+  );
 
   useEffect(() => saveToStorage(STORAGE_KEYS.activeTool, activeTool), [activeTool]);
   useEffect(() => saveToStorage(STORAGE_KEYS.themes, normalizeThemes(themes)), [themes]);
@@ -1236,10 +1328,22 @@ function App(): JSX.Element {
       themeId: string;
       roundTypeIdForLogo?: string;
       includeRulePrompts?: boolean;
+      artworkScope?: ArtworkExportScope;
     }
   ): Promise<void> {
     const promptIds = new Set(prompts.map((prompt) => prompt.id));
-    const sectionArtwork = generatedArtwork.filter((artwork) => promptIds.has(artwork.promptId));
+    const promptScopedArtwork = generatedArtwork.filter((artwork) => promptIds.has(artwork.promptId));
+    const sectionArtwork =
+      promptScopedArtwork.length > 0
+        ? promptScopedArtwork
+        : options.artworkScope
+          ? filterGeneratedArtworkByScope(
+              generatedArtwork,
+              options.artworkScope,
+              options.themeId,
+              options.roundTypeIdForLogo
+            )
+          : [];
     await exportDlcTemplateZip({
       packId: options.packId,
       packLabel: options.packLabel,
@@ -1664,12 +1768,13 @@ function App(): JSX.Element {
                 </button>
                 <button
                   className="sticker bg-violet-300 text-black px-4 py-2 font-black disabled:opacity-50"
-                  disabled={categoryLogoPrompts.length === 0}
+                  disabled={categoryLogoPrompts.length === 0 && categorySectionArtwork.length === 0}
                   onClick={() =>
                     void exportSectionDlc(categoryLogoPrompts, {
                       packId: `${slugifyThemeId(categoryLogoState.categoryName || 'category')}-category-cards`,
                       packLabel: `${categoryLogoState.categoryName || 'Category'} Cards`,
-                      themeId: FIXED_DECK_THEME_ID
+                      themeId: FIXED_DECK_THEME_ID,
+                      artworkScope: 'category-logo'
                     })
                   }
                 >
@@ -1818,12 +1923,13 @@ function App(): JSX.Element {
                 </button>
                 <button
                   className="sticker bg-violet-300 text-black px-4 py-2 font-black disabled:opacity-50"
-                  disabled={themeCardPrompts.length === 0}
+                  disabled={themeCardPrompts.length === 0 && themeCardSectionArtwork.length === 0}
                   onClick={() =>
                     void exportSectionDlc(themeCardPrompts, {
                       packId: `${themeCardState.themeId}-theme-cards`,
                       packLabel: `${getTheme(themeCardState.themeId).name} Theme Cards`,
-                      themeId: themeCardState.themeId
+                      themeId: themeCardState.themeId,
+                      artworkScope: 'theme-card'
                     })
                   }
                 >
@@ -1935,13 +2041,14 @@ function App(): JSX.Element {
                 </button>
                 <button
                   className="sticker bg-violet-300 text-black px-4 py-2 font-black disabled:opacity-50"
-                  disabled={gameTypeLogoPrompts.length === 0}
+                  disabled={gameTypeLogoPrompts.length === 0 && gameTypeSectionArtwork.length === 0}
                   onClick={() =>
                     void exportSectionDlc(gameTypeLogoPrompts, {
                       packId: `${gameTypeLogoState.roundTypeId}-logos`,
                       packLabel: `${getRoundType(gameTypeLogoState.roundTypeId).name} Logos`,
                       themeId: FIXED_DECK_THEME_ID,
-                      roundTypeIdForLogo: gameTypeLogoState.roundTypeId
+                      roundTypeIdForLogo: gameTypeLogoState.roundTypeId,
+                      artworkScope: 'game-type-logo'
                     })
                   }
                 >
