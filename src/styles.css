@@ -63,3 +63,59 @@ body {
   text-align: center;
   padding: 0.75rem;
 }
+
+.artwork-preview-frame {
+  position: relative;
+  width: 100%;
+  max-width: 20rem;
+}
+
+.artwork-preview-image {
+  width: 100%;
+  display: block;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.card-grid-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+  pointer-events: none;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.34) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.34) 1px, transparent 1px);
+  background-size: 12.5% 12.5%;
+}
+
+.card-grid-overlay::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed rgba(255, 215, 0, 0.95);
+}
+
+.card-grid-overlay::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed rgba(255, 215, 0, 0.95);
+}
+
+.card-safe-zone-overlay {
+  position: absolute;
+  top: 14%;
+  left: 10%;
+  width: 80%;
+  height: 72%;
+  border: 2px solid rgba(95, 255, 47, 0.95);
+  border-radius: 0.85rem;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45) inset;
+}
