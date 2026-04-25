@@ -64,6 +64,7 @@ const STORAGE_KEYS = {
   generatedPrompts: 'pof_generated_prompts_v1',
   imageGeneratorConfig: 'pof_image_generator_config_v1',
   generatedArtwork: 'pof_generated_artwork_v1',
+  artworkGridTemplate: 'pof_artwork_grid_template_v1',
   cardTextState: 'pof_card_text_state_v1',
   generatedCardTexts: 'pof_generated_card_texts_v1',
   deckState: 'pof_deck_state_v1'
@@ -312,6 +313,9 @@ function App(): JSX.Element {
   const [generatedArtwork, setGeneratedArtwork] = useState<GeneratedArtwork[]>(
     normalizeGeneratedArtwork(loadFromStorage(STORAGE_KEYS.generatedArtwork, []))
   );
+  const [showArtworkGridTemplate, setShowArtworkGridTemplate] = useState<boolean>(
+    loadFromStorage(STORAGE_KEYS.artworkGridTemplate, true)
+  );
   const [artworkStorageWarning, setArtworkStorageWarning] = useState('');
   const [generatingPromptIds, setGeneratingPromptIds] = useState<string[]>([]);
   const [isGeneratingAllArtwork, setIsGeneratingAllArtwork] = useState(false);
@@ -343,6 +347,7 @@ function App(): JSX.Element {
   useEffect(() => saveToStorage(STORAGE_KEYS.promptState, normalizePromptState(promptState)), [promptState]);
   useEffect(() => saveToStorage(STORAGE_KEYS.generatedPrompts, generatedPrompts), [generatedPrompts]);
   useEffect(() => saveToStorage(STORAGE_KEYS.imageGeneratorConfig, imageGeneratorConfig), [imageGeneratorConfig]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.artworkGridTemplate, showArtworkGridTemplate), [showArtworkGridTemplate]);
   useEffect(() => {
     const result = persistGeneratedArtworkForStorage(generatedArtwork);
     if (!result.ok) {
@@ -981,6 +986,14 @@ function App(): JSX.Element {
                 >
                   Clear Rendered Art
                 </button>
+                <label className="sticker bg-black/65 text-white px-3 py-2 font-bold inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={showArtworkGridTemplate}
+                    onChange={(event) => setShowArtworkGridTemplate(event.target.checked)}
+                  />
+                  Gridline template
+                </label>
               </div>
               {isGeneratingAllArtwork && (
                 <div className="mt-3">
@@ -1056,11 +1069,24 @@ function App(): JSX.Element {
                   </div>
                   {artworkByPromptId.get(prompt.id) && (
                     <div className="mt-3">
-                      <img
-                        src={(artworkByPromptId.get(prompt.id) as GeneratedArtwork).dataUrl}
-                        alt={`${prompt.title} rendered artwork`}
-                        className="w-full max-w-xs rounded border border-white/20"
-                      />
+                      <div className="artwork-preview-frame">
+                        <img
+                          src={(artworkByPromptId.get(prompt.id) as GeneratedArtwork).dataUrl}
+                          alt={`${prompt.title} rendered artwork`}
+                          className="artwork-preview-image"
+                        />
+                        {showArtworkGridTemplate && (
+                          <>
+                            <div className="card-grid-overlay" />
+                            <div className="card-safe-zone-overlay" />
+                          </>
+                        )}
+                      </div>
+                      {showArtworkGridTemplate && (
+                        <p className="text-[11px] text-white/80 mt-2">
+                          Guide overlay only (not included in downloads/exports).
+                        </p>
+                      )}
                     </div>
                   )}
                 </article>
