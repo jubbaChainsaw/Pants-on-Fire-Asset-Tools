@@ -53,6 +53,14 @@ If you need a Play Store bundle instead:
 npm run eas:build:aab
 ```
 
+Project ID resolution for EAS now works automatically in this order:
+
+1. `EXPO_EAS_PROJECT_ID` environment variable (if set)
+2. `app.json` -> `expo.extra.eas.projectId` (when written by EAS)
+3. `EAS_PROJECT_ID` environment variable
+
+So after `npm run eas:configure`, you usually do **not** need to edit `app.config.js` manually.
+
 ## Notes
 
 - Tool title in-app: **Pants on Fire! Asset Tools**

@@ -1,6 +1,8 @@
 const appJson = require('./app.json');
 
 const expo = appJson.expo || {};
+const easFromJson = expo.extra && expo.extra.eas ? expo.extra.eas : {};
+const resolvedProjectId = process.env.EXPO_EAS_PROJECT_ID || easFromJson.projectId;
 
 module.exports = ({ config }) => ({
   ...config,
@@ -11,8 +13,13 @@ module.exports = ({ config }) => ({
   },
   extra: {
     ...(expo.extra || {}),
-    eas: {
-      projectId: process.env.EXPO_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000'
-    }
+    ...(resolvedProjectId
+      ? {
+          eas: {
+            ...easFromJson,
+            projectId: resolvedProjectId
+          }
+        }
+      : {})
   }
 });
